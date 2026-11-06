@@ -333,6 +333,15 @@ if ! grep -q "max-recursion-queries " /etc/bind/named.conf.options; then
 	sed -i "s/^}/\n\tmax-recursion-queries 100;\n}/" /etc/bind/named.conf.options
 fi
 
+# Optional escape hatch for environments where bind9 cannot recurse to the
+# root servers (containers, heavily firewalled networks). Set
+# MIAB_BIND_FORWARDERS to a space-separated list of resolver IPs, e.g.
+# "8.8.8.8 1.1.1.1". Leave unset on a normal Internet-facing VPS.
+if [ -n "${MIAB_BIND_FORWARDERS:-}" ] && ! grep -q "forwarders " /etc/bind/named.conf.options; then
+	fwd=$(echo "$MIAB_BIND_FORWARDERS" | sed 's/[[:space:]]\{1,\}/; /g')
+	sed -i "s/^}/\n\tforwarders { ${fwd}; };\n\tforward only;\n}/" /etc/bind/named.conf.options
+fi
+
 # First we'll disable systemd-resolved's management of resolv.conf and its stub server,
 # on images that ship it. Debian 13 cloud images often do not install
 # systemd-resolved at all (Ubuntu images do). Breaking the symlink to
@@ -340,11 +349,17 @@ fi
 # resolv.conf for DNS servers to use. Put in 127.0.0.1, which is where bind9
 # will be running. Obviously don't do this before installing bind9 or else apt
 # won't be able to resolve a server to download bind9 from.
-rm -f /etc/resolv.conf
+#
+# Only remove resolv.conf when it is a symlink (the systemd-resolved stub).
+# On some hosts (containers, certain cloud images) it is a regular or
+# bind-mounted file and `rm` fails with EBUSY; overwriting in place is enough.
+if [ -L /etc/resolv.conf ]; then
+	rm -f /etc/resolv.conf
+fi
 if [ -f /etc/systemd/resolved.conf ]; then
 	tools/editconf.py /etc/systemd/resolved.conf DNSStubListener=no
 fi
-echo "nameserver 127.0.0.1" > /etc/resolv.conf
+printf 'nameserver 127.0.0.1\n' > /etc/resolv.conf
 
 # Restart the DNS services.
 

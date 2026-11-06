@@ -60,6 +60,7 @@ Debian 13 does not have the Ubuntu package set Mail-in-a-Box v78 was written for
 * SpamPD settings in `/etc/spampd.cfg`
 * The management daemon on Python 3.13, in a virtualenv created with `python3 -m venv`
 * `ntpsec` for clock sync. No Ubuntu PPAs
+* Z-Push's PHP `imap` extension is installed from PECL (Debian 13 has no `php8.4-imap` package), using the last bookworm `libc-client` libraries
 
 Full-text search of mailboxes is not enabled. Upstream installed `dovecot-lucene` from its own PPA, and Debian 13 does not ship that plugin.
 

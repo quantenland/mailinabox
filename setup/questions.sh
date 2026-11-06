@@ -209,6 +209,7 @@ if [ "$PRIVATE_IPV6" != "$PUBLIC_IPV6" ]; then
 	echo "Private IPv6 Address: $PRIVATE_IPV6"
 fi
 if [ -f /usr/bin/git ] && [ -d .git ]; then
-	echo "Mail-in-a-Box Version: $(git describe --always)"
+	# safe.directory tolerates bind-mounted / differently-owned checkouts (containers, Vagrant).
+	echo "Mail-in-a-Box Version: $(git -c safe.directory="$(pwd)" rev-parse --short HEAD 2>/dev/null || echo unknown)"
 fi
 echo

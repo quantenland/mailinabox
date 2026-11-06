@@ -27,8 +27,11 @@ echo "Installing SpamAssassin..."
 apt_install spampd razor pyzor libmail-dkim-perl
 
 # Allow spamassassin to download new rules.
-tools/editconf.py /etc/default/spamassassin \
-	CRON=1
+# Debian 13 dropped /etc/default/spamassassin (and the CRON=1 switch that lived
+# there). Rule refresh is a systemd timer; enable it. The packaged
+# /etc/cron.daily/spamassassin script will also convert itself to the timer on
+# first run when systemd is present.
+systemctl enable --now spamassassin-maintenance.timer
 
 # Configure pyzor, which is a client to a live database of hashes of
 # spam emails. Set the pyzor configuration directory to something sane.
@@ -217,8 +220,11 @@ EOF
 # Precompile the sieve scripts (global scripts should be compiled ahead of time
 # so Dovecot never has to write to /etc/dovecot at runtime) and make them
 # readable/writable by the mail processes, like the rest of /etc/dovecot.
-sievec /etc/dovecot/sieve/learn-spam.sieve
-sievec /etc/dovecot/sieve/learn-ham.sieve
+# Pass -c so sievec loads sieve_plugins / sieve_global_extensions from our
+# configs (vnd.dovecot.pipe and imapsieve); without it those capabilities are
+# unknown and compilation fails.
+sievec -c /etc/dovecot/dovecot.conf /etc/dovecot/sieve/learn-spam.sieve
+sievec -c /etc/dovecot/dovecot.conf /etc/dovecot/sieve/learn-ham.sieve
 chown -R mail:dovecot /etc/dovecot/sieve
 chmod -R o-rwx /etc/dovecot/sieve
 

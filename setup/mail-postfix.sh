@@ -268,7 +268,10 @@ if [ ! -d "$STORAGE_ROOT/mail/postgrey/db" ]; then
 	# Ensure the new paths for postgrey db exists
 	mkdir -p "$STORAGE_ROOT/mail/postgrey/db"
 	# Move over database files
-	mv /var/lib/postgrey/* "$STORAGE_ROOT/mail/postgrey/db/" || true
+	# Fresh installs may have an empty /var/lib/postgrey; only move when present.
+	if compgen -G "/var/lib/postgrey/*" > /dev/null; then
+		mv /var/lib/postgrey/* "$STORAGE_ROOT/mail/postgrey/db/"
+	fi
 fi
 # Ensure permissions are set
 chown -R postgrey:postgrey "$STORAGE_ROOT/mail/postgrey/"

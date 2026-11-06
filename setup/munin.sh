@@ -38,9 +38,16 @@ chown munin /var/log/munin/munin-cgi-html.log
 chown munin /var/log/munin/munin-cgi-graph.log
 
 # ensure munin-node knows the name of this machine
-# and reduce logging level to warning
+# and reduce logging level to warning.
+# Bind to 127.0.0.1 only: MIAB's munin CGI talks to the node locally, and
+# Debian 13's default `host *` fails to start when the kernel has no IPv6
+# (binds to :: and exits). Also force foreground/no-setsid because the
+# packaged systemd unit runs `munin-node --foreground` with Type=notify.
 tools/editconf.py /etc/munin/munin-node.conf -s \
 	host_name="$PRIMARY_HOSTNAME" \
+	host=127.0.0.1 \
+	background=0 \
+	setsid=0 \
 	log_level=1
 
 # Update the activated plugins through munin's autoconfiguration.
@@ -65,7 +72,8 @@ mkdir -p /var/lib/munin-node/plugin-state/
 ln -sf "$PWD/management/munin_start.sh" /usr/local/lib/mailinabox/munin_start.sh
 chmod 0744 /usr/local/lib/mailinabox/munin_start.sh
 cp --remove-destination conf/munin.service /lib/systemd/system/munin.service # target was previously a symlink so remove first
-hide_output systemctl link -f /lib/systemd/system/munin.service
+# Drop leftover `systemctl link` targets; systemd 257+ refuses to enable them.
+rm -f /etc/systemd/system/munin.service
 hide_output systemctl daemon-reload
 hide_output systemctl unmask munin.service
 hide_output systemctl enable munin.service

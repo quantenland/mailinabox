@@ -20,8 +20,10 @@ apt_install duplicity python3-pip python3-venv certbot rsync
 # boto3 is used for amazon aws backups.
 # Both are installed outside the virtualenv, so they can be used by duplicity.
 # (Debian 12+ marks the system Python environment as externally-managed,
-# so --break-system-packages is required for installs outside a venv.)
-hide_output pip3 install --break-system-packages --upgrade b2sdk boto3
+# so --break-system-packages is required for installs outside a venv.
+# --ignore-installed avoids pip trying to uninstall Debian's python3-requests /
+# python3-certifi which have no RECORD file and abort the upgrade.)
+hide_output pip3 install --break-system-packages --upgrade --ignore-installed b2sdk boto3
 
 # Create a virtualenv for the installation of Python 3 packages
 # used by the management daemon.
@@ -107,7 +109,10 @@ exec gunicorn -b 127.0.0.1:10222 -w 1 --timeout 630 wsgi:app
 EOF
 chmod +x $inst_dir/start
 cp --remove-destination conf/mailinabox.service /lib/systemd/system/mailinabox.service # target was previously a symlink so remove it first
-hide_output systemctl link -f /lib/systemd/system/mailinabox.service
+# Older Mail-in-a-Box used `systemctl link`, which on systemd 257+ (Debian 13)
+# leaves a linked unit that `systemctl enable` refuses to operate on. Drop any
+# leftover link and enable the unit shipped under /lib directly.
+rm -f /etc/systemd/system/mailinabox.service
 hide_output systemctl daemon-reload
 hide_output systemctl enable mailinabox.service
 
