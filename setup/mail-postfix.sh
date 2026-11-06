@@ -35,6 +35,7 @@ source /etc/mailinabox.conf # load global vars
 # Install postfix's packages.
 #
 # * `postfix`: The SMTP server.
+# * `postfix-sqlite`: SQLite table support (used for user/alias lookups, see mail-users.sh).
 # * `postfix-pcre`: Enables header filtering.
 # * `postgrey`: A mail policy service that soft-rejects mail the first time
 #   it is received. Spammers don't usually try again. Legitimate mail
@@ -58,7 +59,7 @@ tools/editconf.py /etc/postfix/main.cf \
 	smtp_bind_address="$PRIVATE_IP" \
 	smtp_bind_address6="$PRIVATE_IPV6" \
 	myhostname="$PRIMARY_HOSTNAME"\
-	smtpd_banner="\$myhostname ESMTP Hi, I'm a Mail-in-a-Box (Ubuntu/Postfix; see https://mailinabox.email/)" \
+	smtpd_banner="\$myhostname ESMTP Hi, I'm a Mail-in-a-Box (Debian/Postfix; see https://mailinabox.email/)" \
 	mydestination=localhost
 
 # Tweak some queue settings:
@@ -71,10 +72,11 @@ tools/editconf.py /etc/postfix/main.cf \
 
 # Guard against SMTP smuggling
 # This "long-term" fix is recommended at https://www.postfix.org/smtp-smuggling.html.
-# This beecame supported in a backported fix in package version 3.6.4-1ubuntu1.3. It is
-# unnecessary in Postfix 3.9+ where this is the default. The "short-term" workarounds
-# that we previously had are reverted to postfix defaults (though smtpd_discard_ehlo_keywords
-# was never included in a released version of Mail-in-a-Box).
+# The setting was added in Postfix 3.9 (and backported to some distro packages, e.g.
+# 3.6.4-1ubuntu1.3 on Ubuntu 22.04). In Postfix 3.10 (Debian 13) 'normalize' is already
+# the default, but we set it explicitly so the guard does not depend on the default. The
+# "short-term" workarounds that we previously had are reverted to postfix defaults
+# (though smtpd_discard_ehlo_keywords was never included in a released version of Mail-in-a-Box).
 tools/editconf.py /etc/postfix/main.cf -e \
        smtpd_data_restrictions= \
        smtpd_discard_ehlo_keywords=
