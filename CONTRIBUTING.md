@@ -4,9 +4,9 @@ Mail-in-a-Box is an open source project. Your contributions and pull requests ar
 
 ## Development
 
-To start developing Mail-in-a-Box, [clone the repository](https://github.com/mail-in-a-box/mailinabox) and familiarize yourself with the code.
+To start developing this Debian 13 port, clone the `debian13` branch and familiarize yourself with the code.
 
-    $ git clone https://github.com/mail-in-a-box/mailinabox
+    $ git clone -b debian13 https://github.com/quantenland/mailinabox
 
 ### Vagrant and VirtualBox
 

@@ -15,11 +15,63 @@ source /etc/mailinabox.conf # load global vars
 
 # Prereqs.
 
+# The PHP imap extension is a hard runtime requirement of z-push's IMAP
+# backend. It was a regular apt package for PHP <= 8.3; PHP 8.4 moved the
+# extension to PECL and Debian 13 does not ship php8.4-imap. Prefer the apt
+# package when present, otherwise build it from PECL against the bookworm
+# libc-client shared library (uw-imap was removed from trixie).
 echo "Installing Z-Push (Exchange/ActiveSync server)..."
 apt_install \
-       php"${PHP_VER}"-soap php"${PHP_VER}"-imap libawl-php php"$PHP_VER"-xml php"${PHP_VER}"-intl
+	php"${PHP_VER}"-soap libawl-php php"$PHP_VER"-xml php"${PHP_VER}"-intl
 
-phpenmod -v "$PHP_VER" imap
+ensure_php_imap() {
+	# Already loaded?
+	if php"$PHP_VER" -m 2>/dev/null | grep -qx imap; then
+		return 0
+	fi
+
+	if apt-cache show "php${PHP_VER}-imap" >/dev/null 2>&1; then
+		apt_install "php${PHP_VER}-imap"
+		phpenmod -v "$PHP_VER" imap
+		return 0
+	fi
+
+	echo "php${PHP_VER}-imap is not in the archive; building from PECL..."
+	apt_install php"$PHP_VER"-dev php-pear build-essential pkg-config \
+		libssl-dev libkrb5-dev sgml-base
+
+	# libc-client / mlock were dropped from Debian 13 with uw-imap. Pull the
+	# last bookworm amd64 builds (8:2007f~dfsg-7+b2), pinned by SHA-1.
+	local tmp
+	tmp=$(mktemp -d)
+	wget_verify \
+		http://deb.debian.org/debian/pool/main/u/uw-imap/mlock_2007f~dfsg-7+b2_amd64.deb \
+		00c0097879f115fa56d3b77a7a2b84b6f2f0f0db \
+		"$tmp/mlock.deb"
+	wget_verify \
+		http://deb.debian.org/debian/pool/main/u/uw-imap/libc-client2007e_2007f~dfsg-7+b2_amd64.deb \
+		8b02e92f19678a3e6bd2835c509ef74d9bc2d797 \
+		"$tmp/libc-client.deb"
+	wget_verify \
+		http://deb.debian.org/debian/pool/main/u/uw-imap/libc-client2007e-dev_2007f~dfsg-7+b2_amd64.deb \
+		a7a8bdec35e7b5dbd48dfe4e1f329264f70ed57a \
+		"$tmp/libc-client-dev.deb"
+	hide_output dpkg -i "$tmp/mlock.deb" "$tmp/libc-client.deb" "$tmp/libc-client-dev.deb"
+	rm -rf "$tmp"
+	ldconfig
+
+	# Non-interactive pecl install of the PHP 8.4 imap extension.
+	printf '\n' | hide_output pecl install -f imap
+	echo "extension=imap.so" > /etc/php/"$PHP_VER"/mods-available/imap.ini
+	phpenmod -v "$PHP_VER" imap
+
+	if ! php"$PHP_VER" -m 2>/dev/null | grep -qx imap; then
+		echo "FAILED: could not enable the PHP imap extension required by Z-Push."
+		exit 1
+	fi
+}
+
+ensure_php_imap
 
 # Copy Z-Push into place.
 VERSION=2.7.7

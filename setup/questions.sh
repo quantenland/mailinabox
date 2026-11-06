@@ -16,13 +16,14 @@ if [ -z "${NONINTERACTIVE:-}" ]; then
 	# Installing email_validator is repeated in setup/management.sh, but in setup/management.sh
 	# we install it inside a virtualenv. In this script, we don't have the virtualenv yet
 	# so we install the python package globally.
-	hide_output pip3 install "email_validator>=1.0.0" || exit 1
+	# Debian 13 marks the system Python as externally managed.
+	hide_output pip3 install --break-system-packages "email_validator>=1.0.0" || exit 1
 
 	message_box "Mail-in-a-Box Installation" \
 		"Hello and thanks for deploying a Mail-in-a-Box!
 		\n\nI'm going to ask you a few questions.
 		\n\nTo change your answers later, just run 'sudo mailinabox' from the command line.
-		\n\nNOTE: You should only install this on a brand new Ubuntu installation 100% dedicated to Mail-in-a-Box. Mail-in-a-Box will, for example, remove apache2."
+		\n\nNOTE: You should only install this on a brand new Debian 13 machine dedicated to Mail-in-a-Box. Mail-in-a-Box will, for example, remove apache2."
 fi
 
 # The box needs a name.
@@ -208,6 +209,7 @@ if [ "$PRIVATE_IPV6" != "$PUBLIC_IPV6" ]; then
 	echo "Private IPv6 Address: $PRIVATE_IPV6"
 fi
 if [ -f /usr/bin/git ] && [ -d .git ]; then
-	echo "Mail-in-a-Box Version: $(git describe --always)"
+	# safe.directory tolerates bind-mounted / differently-owned checkouts (containers, Vagrant).
+	echo "Mail-in-a-Box Version: $(git -c safe.directory="$(pwd)" rev-parse --short HEAD 2>/dev/null || echo unknown)"
 fi
 echo

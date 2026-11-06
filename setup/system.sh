@@ -92,34 +92,14 @@ tools/editconf.py /etc/default/motd-news ENABLED=0
 rm -f /var/cache/motd-news
 fi
 
-# ### Add PPAs.
-
-# We install some non-standard Ubuntu packages maintained by other
-# third-party providers. First ensure add-apt-repository is installed.
-
-if [ ! -f /usr/bin/add-apt-repository ]; then
-	echo "Installing add-apt-repository..."
-	hide_output apt-get update
-	apt_install software-properties-common
-fi
-
-# Ensure the universe repository is enabled since some of our packages
-# come from there and minimal Ubuntu installs may have it turned off.
-hide_output add-apt-repository -y universe
-
-# Install the duplicity PPA.
-hide_output add-apt-repository -y ppa:duplicity-team/duplicity-release-git
-
-# Stock PHP is now 8.1, but we're transitioning through 8.0 because
-# of Nextcloud.
-hide_output add-apt-repository --y ppa:ondrej/php
-
 # ### Update Packages
 
+# Debian 13 (trixie) carries current versions of everything we need
+# (php 8.4, certbot, duplicity), so unlike upstream we do not need any
+# PPAs / add-apt-repository. Just update the package lists.
+
 # Update system packages to make sure we have the latest upstream versions
-# of things from Ubuntu, as well as the directory of packages provide by the
-# PPAs so we can install those packages later.
-# --allow-releaseinfo-change is added because ppa:ondrej/php changed its Label.
+# of things from the Debian archive.
 
 echo "Updating system packages..."
 hide_output apt-get update --allow-releaseinfo-change
@@ -150,7 +130,7 @@ echo "Installing system packages..."
 apt_install python3 python3-dev python3-pip python3-setuptools \
 	netcat-openbsd wget curl git sudo coreutils bc file \
 	pollinate openssh-client unzip \
-	unattended-upgrades cron ntp fail2ban rsyslog
+	unattended-upgrades cron ntpsec fail2ban rsyslog
 
 # ### Suppress Upgrade Prompts
 # When Ubuntu 20 comes out, we don't want users to be prompted to upgrade,
@@ -240,11 +220,13 @@ fi
 echo "Initializing system random number generator..."
 dd if=/dev/random of=/dev/urandom bs=1 count=32 2> /dev/null
 
-# This is supposedly sufficient. But because we're not sure if hardware entropy
-# is really any good on virtualized systems, we'll also seed from Ubuntu's
-# pollinate servers:
-
-pollinate  -q -r
+# Also mix in a remote seed. pollinate is packaged on Debian 13 and talks to
+# the public pollen pool. A failure here must not abort setup: the Debian 13
+# kernel blocks until its RNG is initialized, so /dev/urandom is already seeded
+# by the time this script runs.
+if ! pollinate -q -r; then
+	echo "pollinate could not fetch a remote entropy seed; continuing."
+fi
 
 # Between these two, we really ought to be all set.
 
@@ -351,20 +333,40 @@ if ! grep -q "max-recursion-queries " /etc/bind/named.conf.options; then
 	sed -i "s/^}/\n\tmax-recursion-queries 100;\n}/" /etc/bind/named.conf.options
 fi
 
-# First we'll disable systemd-resolved's management of resolv.conf and its stub server.
-# Breaking the symlink to /run/systemd/resolve/stub-resolv.conf means
-# systemd-resolved will read it for DNS servers to use. Put in 127.0.0.1,
-# which is where bind9 will be running. Obviously don't do this before
-# installing bind9 or else apt won't be able to resolve a server to
-# download bind9 from.
-rm -f /etc/resolv.conf
-tools/editconf.py /etc/systemd/resolved.conf DNSStubListener=no
-echo "nameserver 127.0.0.1" > /etc/resolv.conf
+# Optional escape hatch for environments where bind9 cannot recurse to the
+# root servers (containers, heavily firewalled networks). Set
+# MIAB_BIND_FORWARDERS to a space-separated list of resolver IPs, e.g.
+# "8.8.8.8 1.1.1.1". Leave unset on a normal Internet-facing VPS.
+if [ -n "${MIAB_BIND_FORWARDERS:-}" ] && ! grep -q "forwarders " /etc/bind/named.conf.options; then
+	fwd=$(echo "$MIAB_BIND_FORWARDERS" | sed 's/[[:space:]]\{1,\}/; /g')
+	sed -i "s/^}/\n\tforwarders { ${fwd}; };\n\tforward only;\n}/" /etc/bind/named.conf.options
+fi
+
+# First we'll disable systemd-resolved's management of resolv.conf and its stub server,
+# on images that ship it. Debian 13 cloud images often do not install
+# systemd-resolved at all (Ubuntu images do). Breaking the symlink to
+# /run/systemd/resolve/stub-resolv.conf means systemd-resolved will read
+# resolv.conf for DNS servers to use. Put in 127.0.0.1, which is where bind9
+# will be running. Obviously don't do this before installing bind9 or else apt
+# won't be able to resolve a server to download bind9 from.
+#
+# Only remove resolv.conf when it is a symlink (the systemd-resolved stub).
+# On some hosts (containers, certain cloud images) it is a regular or
+# bind-mounted file and `rm` fails with EBUSY; overwriting in place is enough.
+if [ -L /etc/resolv.conf ]; then
+	rm -f /etc/resolv.conf
+fi
+if [ -f /etc/systemd/resolved.conf ]; then
+	tools/editconf.py /etc/systemd/resolved.conf DNSStubListener=no
+fi
+printf 'nameserver 127.0.0.1\n' > /etc/resolv.conf
 
 # Restart the DNS services.
 
 restart_service bind9
-systemctl restart systemd-resolved
+if systemctl cat systemd-resolved.service >/dev/null 2>&1; then
+	restart_service systemd-resolved
+fi
 
 # ### Fail2Ban Service
 

@@ -972,42 +972,55 @@ def list_apt_updates(apt_update=True):
 
 	return pkgs
 
+# This fork tracks github.com/quantenland/mailinabox branch debian13,
+# not the upstream Ubuntu release tags.
+MIAB_FORK_REMOTE = "https://github.com/quantenland/mailinabox.git"
+MIAB_FORK_BRANCH = "debian13"
+
+def _short_rev(rev):
+	if rev and rev not in ("Unknown",) and len(rev) >= 12:
+		return rev[:12]
+	return rev
+
 def what_version_is_this(env):
-	# This function runs `git describe --always --abbrev=0` on the Mail-in-a-Box installation directory.
 	# Git may not be installed and Mail-in-a-Box may not have been cloned from github,
 	# so this function may raise all sorts of exceptions.
 	miab_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-	return shell("check_output", ["/usr/bin/git", "describe", "--always", "--abbrev=0"], env={"GIT_DIR": os.path.join(miab_dir, '.git')}).strip()
+	return shell("check_output", ["/usr/bin/git", "rev-parse", "HEAD"], env={"GIT_DIR": os.path.join(miab_dir, '.git')}).strip()
 
 def get_latest_miab_version():
-	# This pings https://mailinabox.email/setup.sh and extracts the tag named in
-	# the script to determine the current product version.
-    from urllib.request import urlopen, HTTPError, URLError
-
-    try:
-        return re.search(b'TAG=(.*)', urlopen("https://mailinabox.email/setup.sh?ping=1", timeout=5).read()).group(1).decode("utf8")
-    except (TimeoutError, HTTPError, URLError):
-        return None
+	# Compare the installed checkout to the tip of the debian13 branch.
+	try:
+		line = shell("check_output", [
+			"/usr/bin/git", "ls-remote", MIAB_FORK_REMOTE, "refs/heads/" + MIAB_FORK_BRANCH,
+		]).strip()
+		return line.split()[0]
+	except Exception:
+		return None
 
 def check_miab_version(env, output):
 	config = load_settings(env)
 
 	try:
 		this_ver = what_version_is_this(env)
-	except:
+	except Exception:
 		this_ver = "Unknown"
 
 	if config.get("privacy", True):
-		output.print_warning(f"You are running version Mail-in-a-Box {this_ver}. Mail-in-a-Box version check disabled by privacy setting.")
+		output.print_warning(f"You are running Mail-in-a-Box (Debian 13 port) {_short_rev(this_ver)}. Version check disabled by privacy setting.")
 	else:
 		latest_ver = get_latest_miab_version()
 
 		if this_ver == latest_ver:
-			output.print_ok(f"Mail-in-a-Box is up to date. You are running version {this_ver}.")
+			output.print_ok(f"Mail-in-a-Box is up to date with the debian13 branch ({_short_rev(this_ver)}).")
 		elif latest_ver is None:
-			output.print_error(f"Latest Mail-in-a-Box version could not be determined. You are running version {this_ver}.")
+			output.print_error(f"The debian13 branch tip could not be determined. You are running {_short_rev(this_ver)}.")
 		else:
-			output.print_error(f"A new version of Mail-in-a-Box is available. You are running version {this_ver}. The latest version is {latest_ver}. For upgrade instructions, see https://mailinabox.email. ")
+			output.print_error(
+				f"The debian13 branch has new commits. You are running {_short_rev(this_ver)}. "
+				f"The branch tip is {_short_rev(latest_ver)}. "
+				"Update by re-running setup/bootstrap.sh as root."
+			)
 
 def run_and_output_changes(env, pool):
 	import json

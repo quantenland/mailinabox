@@ -4,7 +4,7 @@
 
 source setup/functions.sh # load our functions
 
-# Check system setup: Are we running as root on Ubuntu 18.04 on a
+# Check system setup: Are we running as root on Debian 13 on a
 # machine with enough memory? Is /tmp mounted with exec.
 # If not, this shows an error and exits.
 source setup/preflight.sh
@@ -13,10 +13,19 @@ source setup/preflight.sh
 # triggers some other locale in Python, like ASCII encoding,
 # Python may not be able to read/write files. This is also
 # in the management daemon startup script and the cron script.
+#
+# Minimal Debian images do not install the locales package, and
+# locale-gen only emits locales that are enabled in /etc/locale.gen.
 
-if ! locale -a | grep en_US.utf8 > /dev/null; then
-    # Generate locale if not exists
-    hide_output locale-gen en_US.UTF-8
+if ! command -v locale-gen >/dev/null 2>&1; then
+	echo "Installing locales..."
+	apt_get_quiet update
+	apt_get_quiet install locales
+fi
+if ! locale -a | grep -qi '^en_US.utf8$'; then
+	sed -i 's/^# *\(en_US.UTF-8 UTF-8\)/\1/' /etc/locale.gen
+	grep -q '^en_US.UTF-8 UTF-8' /etc/locale.gen || echo 'en_US.UTF-8 UTF-8' >> /etc/locale.gen
+	hide_output locale-gen en_US.UTF-8
 fi
 
 export LANGUAGE=en_US.UTF-8

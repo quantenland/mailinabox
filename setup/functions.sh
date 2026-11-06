@@ -5,7 +5,8 @@
 # -o pipefail: don't ignore errors in the non-last command in a pipeline
 set -euo pipefail
 
-PHP_VER=8.0
+# Debian 13 (trixie) ships PHP 8.4. Nextcloud 34 and Roundcube 1.7 run on it.
+PHP_VER=8.4
 
 function hide_output {
 	# This function hides the output of a command unless the command fails

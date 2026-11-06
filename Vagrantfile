@@ -2,7 +2,16 @@
 # vi: set ft=ruby :
 
 Vagrant.configure("2") do |config|
-  config.vm.box = "ubuntu/jammy64"
+  # Debian's own debian/trixie64 box is published for libvirt only.
+  # bento/debian-13 is a Debian 13 base box with a VirtualBox image,
+  # which is the provider CONTRIBUTING.md tells developers to install.
+  config.vm.box = "bento/debian-13"
+
+  config.vm.provider "virtualbox" do |vb|
+    # Nextcloud, SpamAssassin and the build of the management venv need
+    # more than VirtualBox's 512 MB default.
+    vb.memory = 2048
+  end
 
   # Network config: Since it's a mail server, the machine must be connected
   # to the public web. However, we currently don't want to expose SSH since

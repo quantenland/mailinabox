@@ -5,7 +5,7 @@
 source setup/functions.sh # load our functions
 source /etc/mailinabox.conf # load global vars
 
-# Some Ubuntu images start off with Apache. Remove it since we
+# Some images start off with Apache. Remove it since we
 # will use nginx. Use autoremove to remove any Apache dependencies.
 if [ -f /usr/sbin/apache2 ]; then
 	echo "Removing apache..."
