@@ -57,37 +57,47 @@ tools/editconf.py /etc/dovecot/conf.d/10-master.conf \
 tools/editconf.py /etc/sysctl.conf \
 	fs.inotify.max_user_instances=1024
 
-# Set the location where we'll store user mailboxes. '%d' is the domain name and '%n' is the
-# username part of the user's email address. We'll ensure that no bad domains or email addresses
-# are created within the management daemon.
+# Set the location where we'll store user mailboxes. '%{user|domain}' is the domain name and
+# '%{user|username}' is the username part of the user's email address (Dovecot 2.4 variable
+# syntax; these replace the Dovecot 2.3 '%d'/'%n'). We'll ensure that no bad domains or email
+# addresses are created within the management daemon.
+#
+# Dovecot 2.4 replaced the single `mail_location` setting with separate
+# `mail_driver`/`mail_path`/`mail_inbox_path` settings. With the maildir driver the
+# INBOX is the maildir root itself, so `mail_inbox_path` points there too (the Debian
+# package default of /var/mail/%{user} is for mbox layouts and must be overridden).
 tools/editconf.py /etc/dovecot/conf.d/10-mail.conf \
-	mail_location="maildir:$STORAGE_ROOT/mail/mailboxes/%d/%n" \
+	mail_driver=maildir \
+	mail_path="$STORAGE_ROOT/mail/mailboxes/%{user|domain}/%{user|username}" \
+	mail_inbox_path="$STORAGE_ROOT/mail/mailboxes/%{user|domain}/%{user|username}" \
 	mail_privileged_group=mail \
+	mail_uid=mail \
+	mail_gid=mail \
 	first_valid_uid=0
 
 # Create, subscribe, and mark as special folders: INBOX, Drafts, Sent, Trash, Spam and Archive.
 cp conf/dovecot-mailboxes.conf /etc/dovecot/conf.d/15-mailboxes.conf
-sed -i "s/#mail_plugins =\(.*\)/mail_plugins =\1 \$mail_plugins quota/" /etc/dovecot/conf.d/10-mail.conf
-if ! grep -q "mail_plugins.* imap_quota" /etc/dovecot/conf.d/20-imap.conf; then
-  sed -i "s/\(mail_plugins =.*\)/\1\n  mail_plugins = \$mail_plugins imap_quota/" /etc/dovecot/conf.d/20-imap.conf
-fi
 
 # configure stuff for quota support
+#
+# Dovecot 2.4 configures quota roots as named `quota ... { }` sections with a
+# `quota_driver` (the old `quota = maildir` plugin setting is gone), and quota
+# limits can be overridden per-user from userdb. The quota-status policy service
+# still speaks the Postfix policy protocol; its `quota_status_*` settings are now
+# top-level settings. See https://doc.dovecot.org/2.4.1/core/plugins/quota.html
 if ! grep -q "quota_status_success = DUNNO" /etc/dovecot/conf.d/90-quota.conf; then
     cat > /etc/dovecot/conf.d/90-quota.conf << EOF;
-plugin {
-  quota = maildir
-
-  quota_grace = 10%%
-
-  quota_status_success = DUNNO
-  quota_status_nouser = DUNNO
-  quota_status_overquota = "522 5.2.2 Mailbox is full"
+quota "User quota" {
+  driver = count
 }
+
+quota_status_success = DUNNO
+quota_status_nouser = DUNNO
+quota_status_overquota = "522 5.2.2 Mailbox is full"
 
 service quota-status {
     executable = quota-status -p postfix
-    inet_listener {
+    inet_listener quota-status {
         port = 12340
     }
 }
@@ -99,22 +109,30 @@ fi
 # Require that passwords are sent over SSL only, and allow the usual IMAP authentication mechanisms.
 # The LOGIN mechanism is supposedly for Microsoft products like Outlook to do SMTP login (I guess
 # since we're using Dovecot to handle SMTP authentication?).
+#
+# Dovecot 2.4 renamed `disable_plaintext_auth` to the inverted `auth_allow_cleartext`
+# (and made `no` its default): plaintext authentication is only allowed over TLS.
 tools/editconf.py /etc/dovecot/conf.d/10-auth.conf \
-	disable_plaintext_auth=yes \
+	auth_allow_cleartext=no \
 	"auth_mechanisms=plain login"
 
 # Enable SSL, specify the location of the SSL certificate and private key files.
 # Use Mozilla's "Intermediate" recommendations at https://ssl-config.mozilla.org/#server=dovecot&server-version=2.2.33&config=intermediate&openssl-version=1.1.1,
 # except that the current version of Dovecot does not have a TLSv1.3 setting, so we only use TLSv1.2.
+#
+# Dovecot 2.4 renamed the server-side certificate/key settings to
+# `ssl_server_cert_file`/`ssl_server_key_file` (and they now take a path rather than
+# a "<path" redirect), replaced `ssl_prefer_server_ciphers` with `ssl_server_prefer_ciphers`,
+# and dropped `ssl_dh_parameters_length` (`ssl_server_dh_file` is optional now, but we
+# keep ours since our cipher list includes DHE ciphers and setup/ssl.sh generates it).
 tools/editconf.py /etc/dovecot/conf.d/10-ssl.conf \
 	ssl=required \
-	"ssl_cert=<$STORAGE_ROOT/ssl/ssl_certificate.pem" \
-	"ssl_key=<$STORAGE_ROOT/ssl/ssl_private_key.pem" \
+	"ssl_server_cert_file=$STORAGE_ROOT/ssl/ssl_certificate.pem" \
+	"ssl_server_key_file=$STORAGE_ROOT/ssl/ssl_private_key.pem" \
 	"ssl_min_protocol=TLSv1.2" \
 	"ssl_cipher_list=ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384" \
-	"ssl_prefer_server_ciphers=no" \
-	"ssl_dh_parameters_length=2048" \
-	"ssl_dh=<$STORAGE_ROOT/ssl/dh2048.pem"
+	"ssl_server_prefer_ciphers=client" \
+	"ssl_server_dh_file=$STORAGE_ROOT/ssl/dh2048.pem"
 
 # Disable in-the-clear IMAP/POP because there is no reason for a user to transmit
 # login credentials outside of an encrypted connection. Only the over-TLS versions
@@ -136,8 +154,10 @@ tools/editconf.py /etc/dovecot/conf.d/20-imap.conf \
 # UIDLs are used by POP3 clients to keep track of what messages they've downloaded.
 # For new POP3 servers, the easiest way to set up UIDLs is to use IMAP's UIDVALIDITY
 # and UID values, the default in Dovecot.
+# (Dovecot 2.4 rewrote variable expansion: the old "%08Xu%08Xv" form became
+# "%{uid | hex(8)}%{uidvalidity | hex(8)}", which yields identical UIDLs.)
 tools/editconf.py /etc/dovecot/conf.d/20-pop3.conf \
-	pop3_uidl_format="%08Xu%08Xv"
+	pop3_uidl_format="%{uid | hex(8)}%{uidvalidity | hex(8)}"
 
 # ### LDA (LMTP)
 
@@ -157,7 +177,7 @@ service lmtp {
   #  group = postfix
   #}
   inet_listener lmtp {
-    address = 127.0.0.1
+    listen = 127.0.0.1
     port = 10026
   }
 }
@@ -166,12 +186,33 @@ service lmtp {
 # for Nextcloud to do imap authentication. (See #1577)
 service imap-login {
   inet_listener imap {
-    address = 127.0.0.1
+    listen = 127.0.0.1
     port = 143
   }
 }
+
+# Dovecot 2.4 enables plugins with `mail_plugins` boolean-list blocks instead of
+# space-separated lists referencing \$mail_plugins.
+mail_plugins {
+  quota = yes
+}
+
 protocol imap {
   mail_max_userip_connections = 40
+  mail_plugins {
+    imap_quota = yes
+  }
+}
+
+# Mail-in-a-Box looks up users as user@domain, but Debian's stock 20-lmtp.conf
+# strips the domain (auth_username_format = %{user|username}) because its default
+# passwd userdb has no domains. Override it so LMTP sees the full address, and
+# enable the sieve plugin for local delivery.
+protocol lmtp {
+  mail_plugins {
+    sieve = yes
+  }
+  auth_username_format = %{user}
 }
 EOF
 
@@ -183,35 +224,49 @@ tools/editconf.py /etc/dovecot/conf.d/15-lda.conf \
 # ### Sieve
 
 # Enable the Dovecot sieve plugin which let's users run scripts that process
-# mail as it comes in.
-sed -i "s/#mail_plugins = .*/mail_plugins = \$mail_plugins sieve/" /etc/dovecot/conf.d/20-lmtp.conf
+# mail as it comes in. (The plugin is enabled for lmtp in 99-local.conf above;
+# Dovecot 2.4's stock 20-lmtp.conf no longer has a `mail_plugins` line to sed.)
 
 # Configure sieve. We'll create a global script that moves mail marked
 # as spam by Spamassassin into the user's Spam folder.
 #
-# * `sieve_before`: The path to our global sieve which handles moving spam to the Spam folder.
+# Dovecot 2.4's pigeonhole replaced the `sieve`, `sieve_dir`, `sieve_before`,
+# `sieve_before2` and `sieve_after` settings with named `sieve_script ... { }`
+# blocks (see https://doc.dovecot.org/2.4.1/core/plugins/sieve.html):
 #
-# * `sieve_before2`: The path to our global sieve directory for sieve which can contain .sieve files
+# * `miab_spam`: A global before-script which handles moving spam to the Spam folder.
+#
+# * `global_before`: A global before-directory for sieve which can contain .sieve files
 # to run globally for every user before their own sieve files run.
 #
-# * `sieve_after`: The path to our global sieve directory which can contain .sieve files
+# * `global_after`: A global after-directory which can contain .sieve files
 # to run globally for every user after their own sieve files run.
 #
-# * `sieve`: The path to the user's main active script. ManageSieve will create a symbolic
-# link here to the actual sieve script. It should not be in the mailbox directory
-# (because then it might appear as a folder) and it should not be in the sieve_dir
-# (because then I suppose it might appear to the user as one of their scripts).
-# * `sieve_dir`: Directory for :personal include scripts for the include extension. This
-# is also where the ManageSieve service stores the user's scripts.
+# * `personal`: The user's own scripts, plus the active-script symlink. ManageSieve
+# stores the user's scripts in the path directory and manages the symlink at
+# active_path. It should not be in the mailbox directory (because then it might
+# appear as a folder).
+#
+# Multiple before-storages run in the order they are defined here.
 cat > /etc/dovecot/conf.d/99-local-sieve.conf << EOF;
-plugin {
-  sieve_before = /etc/dovecot/sieve-spam.sieve
-  sieve_before2 = $STORAGE_ROOT/mail/sieve/global_before
-  sieve_after = $STORAGE_ROOT/mail/sieve/global_after
-  sieve = $STORAGE_ROOT/mail/sieve/%d/%n.sieve
-  sieve_dir = $STORAGE_ROOT/mail/sieve/%d/%n
-  sieve_redirect_envelope_from = recipient
+sieve_script miab_spam {
+  type = before
+  path = /etc/dovecot/sieve-spam.sieve
 }
+sieve_script global_before {
+  type = before
+  path = $STORAGE_ROOT/mail/sieve/global_before
+}
+sieve_script global_after {
+  type = after
+  path = $STORAGE_ROOT/mail/sieve/global_after
+}
+sieve_script personal {
+  driver = file
+  path = $STORAGE_ROOT/mail/sieve/%{user|domain}/%{user|username}
+  active_path = $STORAGE_ROOT/mail/sieve/%{user|domain}/%{user|username}.sieve
+}
+sieve_redirect_envelope_from = recipient
 EOF
 
 # Copy the global sieve script into where we've told Dovecot to look for it. Then

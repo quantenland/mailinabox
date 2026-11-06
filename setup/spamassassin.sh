@@ -7,7 +7,9 @@
 # message over LMTP to dovecot for local delivery.
 #
 # In order to move spam automatically into the Spam folder we use the dovecot sieve
-# plugin.
+# plugin. Users train the Bayes classifier by moving mail into or out of the Spam
+# folder: Dovecot's imapsieve plugin (Dovecot 2.4's replacement for the removed
+# dovecot-antispam package) runs sa-learn on those moves.
 
 source /etc/mailinabox.conf # get global vars
 source setup/functions.sh # load our functions
@@ -19,8 +21,10 @@ source setup/functions.sh # load our functions
 # libmail-dkim-perl is needed to make the spamassassin DKIM module work.
 # For more information see Debian Bug #689414:
 # https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=689414
+# (dovecot-antispam no longer exists in Debian 13; Bayes retraining is
+# wired up with dovecot's imapsieve plugin below instead.)
 echo "Installing SpamAssassin..."
-apt_install spampd razor pyzor dovecot-antispam libmail-dkim-perl
+apt_install spampd razor pyzor libmail-dkim-perl
 
 # Allow spamassassin to download new rules.
 tools/editconf.py /etc/default/spamassassin \
@@ -125,7 +129,8 @@ EOF
 #
 # These files must be:
 #
-# * Writable by sa-learn-pipe script below, which run as the 'mail' user, for manual tagging of mail as spam/ham.
+# * Writable by the sa-learn wrapper scripts below, which run as the 'mail' user, for
+#   retraining when mail is moved into or out of the Spam folder.
 # * Readable by the spampd process ('spampd' user) during mail filtering.
 # * Writable by the debian-spamd user, which runs /etc/cron.daily/spamassassin.
 #
@@ -141,45 +146,107 @@ tools/editconf.py /etc/spamassassin/local.cf -s \
 mkdir -p "$STORAGE_ROOT/mail/spamassassin"
 chown -R spampd:spampd "$STORAGE_ROOT/mail/spamassassin"
 
-# To mark mail as spam or ham, just drag it in or out of the Spam folder. We'll
-# use the Dovecot antispam plugin to detect the message move operation and execute
-# a shell script that invokes learning.
+# To mark mail as spam or ham, just drag it in or out of the Spam folder. The
+# Dovecot imapsieve plugin detects the copy/move operation and runs a sieve
+# script that pipes the message to sa-learn. (This replaces the dovecot-antispam
+# plugin, which no longer exists in Debian 13 / Dovecot 2.4.)
+#
+# The `imap_sieve` IMAP plugin hooks IMAP events; the `sieve_imapsieve` sieve
+# plugin and `sieve_extprograms` (for the `vnd.dovecot.pipe` action) are sieve
+# plugins configured in `sieve_plugins`. The rules follow the form of the example
+# at https://doc.dovecot.org/2.4.1/core/plugins/imap_sieve.html: scripts in a
+# `mailbox Spam { }` block run on mail copied/appended into the Spam folder, and
+# scripts in an `imapsieve_from Spam { }` block run on mail copied out of it.
+# The mailbox name matches conf/dovecot-mailboxes.conf and the global
+# spam-delivery sieve rule, which both use "Spam".
+cat > /etc/dovecot/conf.d/99-local-imapsieve.conf << EOF;
+sieve_plugins {
+  sieve_imapsieve = yes
+  sieve_extprograms = yes
+}
+sieve_pipe_bin_dir = /usr/local/bin
+sieve_global_extensions {
+  vnd.dovecot.pipe = yes
+}
 
-# Enable the Dovecot antispam plugin.
-# (Be careful if we use multiple plugins later.) #NODOC
-sed -i "s/#mail_plugins = .*/mail_plugins = \$mail_plugins antispam/" /etc/dovecot/conf.d/20-imap.conf
-sed -i "s/#mail_plugins = .*/mail_plugins = \$mail_plugins antispam/" /etc/dovecot/conf.d/20-pop3.conf
+# Mail copied/moved/appended into Spam: learn as spam.
+mailbox Spam {
+  sieve_script learn_spam {
+    type = before
+    cause = copy append
+    path = /etc/dovecot/sieve/learn-spam.sieve
+  }
+}
 
-# Configure the antispam plugin to call sa-learn-pipe.sh.
-cat > /etc/dovecot/conf.d/99-local-spampd.conf << EOF;
-plugin {
-    antispam_backend = pipe
-    antispam_spam_pattern_ignorecase = SPAM
-    antispam_trash_pattern_ignorecase = trash;Deleted *
-    antispam_allow_append_to_spam = yes
-    antispam_pipe_program_spam_args = /usr/local/bin/sa-learn-pipe.sh;--spam
-    antispam_pipe_program_notspam_args = /usr/local/bin/sa-learn-pipe.sh;--ham
-    antispam_pipe_program = /bin/bash
+# Mail copied/moved out of Spam: relearn as ham.
+imapsieve_from Spam {
+  sieve_script learn_ham {
+    type = before
+    cause = copy
+    path = /etc/dovecot/sieve/learn-ham.sieve
+  }
+}
+
+protocol imap {
+  mail_plugins {
+    imap_sieve = yes
+  }
 }
 EOF
 
-# Have Dovecot run its mail process with a supplementary group (the spampd group)
-# so that it can access the learning files.
+# The sieve scripts pipe the message to the wrapper scripts below (resolved via
+# sieve_pipe_bin_dir). The message arrives on stdin.
+mkdir -p /etc/dovecot/sieve
+cat > /etc/dovecot/sieve/learn-spam.sieve << EOF;
+require ["vnd.dovecot.pipe", "copy", "imapsieve"];
 
-tools/editconf.py /etc/dovecot/conf.d/10-mail.conf \
-	mail_access_groups=spampd
+pipe :copy "sa-learn-spam.sh";
+EOF
+cat > /etc/dovecot/sieve/learn-ham.sieve << EOF;
+require ["vnd.dovecot.pipe", "copy", "imapsieve"];
 
-# Here's the script that the antispam plugin executes. It spools the message into
-# a temporary file and then runs sa-learn on it.
-# from http://wiki2.dovecot.org/Plugins/Antispam
-rm -f /usr/bin/sa-learn-pipe.sh # legacy location #NODOC
-cat > /usr/local/bin/sa-learn-pipe.sh << EOF;
-cat<&0 >> /tmp/sendmail-msg-\$\$.txt
-/usr/bin/sa-learn \$* /tmp/sendmail-msg-\$\$.txt > /dev/null
-rm -f /tmp/sendmail-msg-\$\$.txt
+pipe :copy "sa-learn-ham.sh";
+EOF
+
+# Precompile the sieve scripts (global scripts should be compiled ahead of time
+# so Dovecot never has to write to /etc/dovecot at runtime) and make them
+# readable/writable by the mail processes, like the rest of /etc/dovecot.
+sievec /etc/dovecot/sieve/learn-spam.sieve
+sievec /etc/dovecot/sieve/learn-ham.sieve
+chown -R mail:dovecot /etc/dovecot/sieve
+chmod -R o-rwx /etc/dovecot/sieve
+
+# Here are the scripts that the sieve pipe actions execute. They spool the
+# message into a temporary file and then run sa-learn on it. Dovecot runs them
+# as the mail user, which has access to the Bayes files via mail_access_groups
+# (set below) and the file modes configured above.
+rm -f /usr/bin/sa-learn-pipe.sh /usr/local/bin/sa-learn-pipe.sh # legacy locations #NODOC
+cat > /usr/local/bin/sa-learn-spam.sh << EOF;
+#!/bin/bash
+# Pipe a message on stdin into the SpamAssassin Bayes database as ham/spam.
+# Used by Dovecot's imapsieve hooks; see /etc/dovecot/conf.d/99-local-imapsieve.conf.
+temp=\$(mktemp /tmp/miab-sa-learn.XXXXXX) || exit 0
+cat >\$temp
+/usr/bin/sa-learn --spam \$temp > /dev/null
+rm -f \$temp
 exit 0
 EOF
-chmod a+x /usr/local/bin/sa-learn-pipe.sh
+cat > /usr/local/bin/sa-learn-ham.sh << EOF;
+#!/bin/bash
+# Pipe a message on stdin into the SpamAssassin Bayes database as ham.
+# Used by Dovecot's imapsieve hooks; see /etc/dovecot/conf.d/99-local-imapsieve.conf.
+temp=\$(mktemp /tmp/miab-sa-learn.XXXXXX) || exit 0
+cat >\$temp
+/usr/bin/sa-learn --ham \$temp > /dev/null
+rm -f \$temp
+exit 0
+EOF
+chmod a+x /usr/local/bin/sa-learn-spam.sh /usr/local/bin/sa-learn-ham.sh
+
+# Have Dovecot run its mail process with a supplementary group (the spampd group)
+# so that it can access the learning files.
+tools/editconf.py /etc/dovecot/conf.d/10-mail.conf \
+	mail_access_groups=spampd
 
 # Create empty bayes training data (if it doesn't exist). Once the files exist,
 # ensure they are group-writable so that the Dovecot process has access.
