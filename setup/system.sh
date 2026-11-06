@@ -92,27 +92,43 @@ tools/editconf.py /etc/default/motd-news ENABLED=0
 rm -f /var/cache/motd-news
 fi
 
-# ### Add PPAs.
+# ### Add package repositories.
 
-# We install some non-standard Ubuntu packages maintained by other
-# third-party providers. First ensure add-apt-repository is installed.
-
-if [ ! -f /usr/bin/add-apt-repository ]; then
-	echo "Installing add-apt-repository..."
+if on_debian; then
+	# Ubuntu PPAs and the "universe" component do not exist on Debian, and
+	# software-properties-common is not in Debian 13. PHP 8.0 is also absent
+	# (Trixie ships PHP 8.4, and php-imap was removed). packages.sury.org is
+	# the Debian build of the same PHP archive as ppa:ondrej/php, so setup
+	# can keep installing PHP 8.0, including the imap extension Roundcube,
+	# Nextcloud, and Z-Push need. Duplicity comes from Debian itself.
+	echo "Configuring the Debian PHP repository..."
 	hide_output apt-get update
-	apt_install software-properties-common
+	apt_install ca-certificates curl lsb-release
+	hide_output curl -fsSLo /tmp/debsuryorg-archive-keyring.deb https://packages.sury.org/debsuryorg-archive-keyring.deb
+	hide_output dpkg -i /tmp/debsuryorg-archive-keyring.deb
+	php_codename=$(. /etc/os-release && printf '%s' "${VERSION_CODENAME}")
+	echo "deb [signed-by=/usr/share/keyrings/debsuryorg-archive-keyring.gpg] https://packages.sury.org/php/ ${php_codename} main" > /etc/apt/sources.list.d/php.list
+else
+	# We install some non-standard Ubuntu packages maintained by other
+	# third-party providers. First ensure add-apt-repository is installed.
+
+	if [ ! -f /usr/bin/add-apt-repository ]; then
+		echo "Installing add-apt-repository..."
+		hide_output apt-get update
+		apt_install software-properties-common
+	fi
+
+	# Ensure the universe repository is enabled since some of our packages
+	# come from there and minimal Ubuntu installs may have it turned off.
+	hide_output add-apt-repository -y universe
+
+	# Install the duplicity PPA.
+	hide_output add-apt-repository -y ppa:duplicity-team/duplicity-release-git
+
+	# Stock PHP is now 8.1, but we're transitioning through 8.0 because
+	# of Nextcloud.
+	hide_output add-apt-repository --y ppa:ondrej/php
 fi
-
-# Ensure the universe repository is enabled since some of our packages
-# come from there and minimal Ubuntu installs may have it turned off.
-hide_output add-apt-repository -y universe
-
-# Install the duplicity PPA.
-hide_output add-apt-repository -y ppa:duplicity-team/duplicity-release-git
-
-# Stock PHP is now 8.1, but we're transitioning through 8.0 because
-# of Nextcloud.
-hide_output add-apt-repository --y ppa:ondrej/php
 
 # ### Update Packages
 
@@ -147,10 +163,16 @@ apt_get_quiet autoremove
 # * openssh-client: provides ssh-keygen
 
 echo "Installing system packages..."
+# Debian 13 removed the ntp package. ntpsec is the replacement and
+# provides the same time-daemon facility.
+TIME_PKG=ntp
+if ! apt_package_available ntp && apt_package_available ntpsec; then
+	TIME_PKG=ntpsec
+fi
 apt_install python3 python3-dev python3-pip python3-setuptools \
 	netcat-openbsd wget curl git sudo coreutils bc file \
 	pollinate openssh-client unzip \
-	unattended-upgrades cron ntp fail2ban rsyslog
+	unattended-upgrades cron "$TIME_PKG" fail2ban rsyslog
 
 # ### Suppress Upgrade Prompts
 # When Ubuntu 20 comes out, we don't want users to be prompted to upgrade,
@@ -358,13 +380,21 @@ fi
 # installing bind9 or else apt won't be able to resolve a server to
 # download bind9 from.
 rm -f /etc/resolv.conf
-tools/editconf.py /etc/systemd/resolved.conf DNSStubListener=no
+# systemd-resolved is installed by default on Ubuntu and only sometimes on
+# Debian. Its configuration file is not shipped when the package is absent,
+# and editing a missing file aborts setup.
+if [ -e /usr/lib/systemd/system/systemd-resolved.service ] || [ -e /lib/systemd/system/systemd-resolved.service ]; then
+	[ -e /etc/systemd/resolved.conf ] || touch /etc/systemd/resolved.conf
+	tools/editconf.py /etc/systemd/resolved.conf DNSStubListener=no
+fi
 echo "nameserver 127.0.0.1" > /etc/resolv.conf
 
 # Restart the DNS services.
 
 restart_service bind9
-systemctl restart systemd-resolved
+if [ -e /usr/lib/systemd/system/systemd-resolved.service ] || [ -e /lib/systemd/system/systemd-resolved.service ]; then
+	systemctl restart systemd-resolved
+fi
 
 # ### Fail2Ban Service
 

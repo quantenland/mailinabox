@@ -18,8 +18,14 @@ apt_install duplicity python3-pip virtualenv certbot rsync
 
 # b2sdk is used for backblaze backups.
 # boto3 is used for amazon aws backups.
-# Both are installed outside the pipenv, so they can be used by duplicity
-hide_output pip3 install --upgrade b2sdk boto3
+# Both are installed outside the pipenv, so they can be used by duplicity.
+# Debian's duplicity is built against the distro Python modules, and pip
+# cannot install into the system interpreter (PEP 668).
+if on_debian; then
+	apt_install python3-b2sdk python3-boto3
+else
+	hide_output pip3 install --upgrade b2sdk boto3
+fi
 
 # Create a virtualenv for the installation of Python 3 packages
 # used by the management daemon.

@@ -20,7 +20,14 @@ source setup/functions.sh # load our functions
 # For more information see Debian Bug #689414:
 # https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=689414
 echo "Installing SpamAssassin..."
-apt_install spampd razor pyzor dovecot-antispam libmail-dkim-perl
+# dovecot-antispam was removed from Debian 13: it does not build against
+# Dovecot 2.4. Spam learning on folder move needs that plugin, so skip it
+# when the package is not installable. Sieve still files spam into Spam/.
+SPAM_PACKAGES=(spampd razor pyzor libmail-dkim-perl)
+if apt_package_available dovecot-antispam; then
+	SPAM_PACKAGES+=(dovecot-antispam)
+fi
+apt_install "${SPAM_PACKAGES[@]}"
 
 # Allow spamassassin to download new rules.
 tools/editconf.py /etc/default/spamassassin \
@@ -46,10 +53,24 @@ echo "public.pyzor.org:24441" > /etc/spamassassin/pyzor/servers
 # * Increase the maximum message size of scanned messages from the default of 64KB to 500KB, which
 #   is Spamassassin (spamc)'s own default. Specified in KBytes.
 # * Disable localmode so Pyzor, DKIM and DNS checks can be used.
-tools/editconf.py /etc/default/spampd \
-	DESTPORT=10026 \
-	ADDOPTS="\"--maxsize=2000\"" \
-	LOCALONLY=0
+# Debian 13's spampd unit reads /etc/spampd.cfg and does not ship
+# /etc/default/spampd. Ubuntu 22.04 still uses the defaults file.
+if [ -f /etc/spampd.cfg ]; then
+	tools/editconf.py /etc/spampd.cfg -s \
+		relayport=10026 \
+		maxsize=2000 \
+		local-only=0
+else
+	tools/editconf.py /etc/default/spampd \
+		DESTPORT=10026 \
+		ADDOPTS="\"--maxsize=2000\"" \
+		LOCALONLY=0
+fi
+if [ -e /lib/systemd/system/spamassassin-maintenance.timer ] || [ -e /usr/lib/systemd/system/spamassassin-maintenance.timer ]; then
+	# Debian 13 runs sa-update from this timer. CRON=1 above is what the
+	# cron script reads, including when it migrates itself to the timer.
+	hide_output systemctl enable spamassassin-maintenance.timer
+fi
 
 # Spamassassin normally wraps spam as an attachment inside a fresh
 # email with a report about the message. This also protects the user
@@ -143,15 +164,18 @@ chown -R spampd:spampd "$STORAGE_ROOT/mail/spamassassin"
 
 # To mark mail as spam or ham, just drag it in or out of the Spam folder. We'll
 # use the Dovecot antispam plugin to detect the message move operation and execute
-# a shell script that invokes learning.
+# a shell script that invokes learning. The plugin package is not available on
+# Dovecot 2.4 / Debian 13; writing its 2.3 config there prevents Dovecot from
+# starting.
 
-# Enable the Dovecot antispam plugin.
-# (Be careful if we use multiple plugins later.) #NODOC
-sed -i "s/#mail_plugins = .*/mail_plugins = \$mail_plugins antispam/" /etc/dovecot/conf.d/20-imap.conf
-sed -i "s/#mail_plugins = .*/mail_plugins = \$mail_plugins antispam/" /etc/dovecot/conf.d/20-pop3.conf
+if dpkg -s dovecot-antispam >/dev/null 2>&1; then
+	# Enable the Dovecot antispam plugin.
+	# (Be careful if we use multiple plugins later.) #NODOC
+	sed -i "s/#mail_plugins = .*/mail_plugins = \$mail_plugins antispam/" /etc/dovecot/conf.d/20-imap.conf
+	sed -i "s/#mail_plugins = .*/mail_plugins = \$mail_plugins antispam/" /etc/dovecot/conf.d/20-pop3.conf
 
-# Configure the antispam plugin to call sa-learn-pipe.sh.
-cat > /etc/dovecot/conf.d/99-local-spampd.conf << EOF;
+	# Configure the antispam plugin to call sa-learn-pipe.sh.
+	cat > /etc/dovecot/conf.d/99-local-spampd.conf << EOF;
 plugin {
     antispam_backend = pipe
     antispam_spam_pattern_ignorecase = SPAM
@@ -162,6 +186,7 @@ plugin {
     antispam_pipe_program = /bin/bash
 }
 EOF
+fi
 
 # Have Dovecot run its mail process with a supplementary group (the spampd group)
 # so that it can access the learning files.

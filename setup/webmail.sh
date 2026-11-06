@@ -20,10 +20,15 @@ source /etc/mailinabox.conf # load global vars
 
 # These dependencies are from `apt-cache showpkg roundcube-core`.
 echo "Installing Roundcube (webmail)..."
+# Debian 13 renamed libmagic1 to libmagic1t64 during the 64-bit time_t transition.
+LIBMAGIC_PKG=libmagic1
+if ! apt_package_available libmagic1 && apt_package_available libmagic1t64; then
+	LIBMAGIC_PKG=libmagic1t64
+fi
 apt_install \
 	dbconfig-common \
 	php"${PHP_VER}"-cli php"${PHP_VER}"-sqlite3 php"${PHP_VER}"-intl php"${PHP_VER}"-common php"${PHP_VER}"-curl php"${PHP_VER}"-imap \
-	php"${PHP_VER}"-gd php"${PHP_VER}"-pspell php"${PHP_VER}"-mbstring php"${PHP_VER}"-xml libjs-jquery libjs-jquery-mousewheel libmagic1 \
+	php"${PHP_VER}"-gd php"${PHP_VER}"-pspell php"${PHP_VER}"-mbstring php"${PHP_VER}"-xml libjs-jquery libjs-jquery-mousewheel "$LIBMAGIC_PKG" \
 	sqlite3
 
 # Install Roundcube from source if it is not already present or if it is out of date.
