@@ -5,7 +5,13 @@
 # -o pipefail: don't ignore errors in the non-last command in a pipeline
 set -euo pipefail
 
+# PHP version: upstream's Ubuntu 22.04 base pins 8.0 (via ppa:ondrej/php);
+# Debian 13 ships 8.4 in the main archive and Nextcloud 34 / Roundcube 1.7
+# are compatible with it.
 PHP_VER=8.0
+if grep -qs '^ID=debian' /etc/os-release && grep -qs '^VERSION_ID=13' /etc/os-release; then
+	PHP_VER=8.4
+fi
 
 function hide_output {
 	# This function hides the output of a command unless the command fails

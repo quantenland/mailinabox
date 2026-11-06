@@ -18,12 +18,16 @@ source /etc/mailinabox.conf # load global vars
 # So we'll use apt-get to manually install the dependencies of roundcube that we know we need,
 # and then we'll manually install roundcube from source.
 
-# These dependencies are from `apt-cache showpkg roundcube-core`.
+# These dependencies are hand-checked for Debian 13 (php 8.4):
+# - php-imap is NOT needed: roundcube ships its own PHP IMAP client, and the
+#   imap extension is no longer packaged for PHP >= 8.4.
+# - libmagic was renamed libmagic1t64 (was libmagic1).
+# - php-zip is required by the enabled zipdownload plugin.
 echo "Installing Roundcube (webmail)..."
 apt_install \
 	dbconfig-common \
-	php"${PHP_VER}"-cli php"${PHP_VER}"-sqlite3 php"${PHP_VER}"-intl php"${PHP_VER}"-common php"${PHP_VER}"-curl php"${PHP_VER}"-imap \
-	php"${PHP_VER}"-gd php"${PHP_VER}"-pspell php"${PHP_VER}"-mbstring php"${PHP_VER}"-xml libjs-jquery libjs-jquery-mousewheel libmagic1 \
+	php"${PHP_VER}"-cli php"${PHP_VER}"-sqlite3 php"${PHP_VER}"-intl php"${PHP_VER}"-common php"${PHP_VER}"-curl php"${PHP_VER}"-gd \
+	php"${PHP_VER}"-pspell php"${PHP_VER}"-mbstring php"${PHP_VER}"-xml php"${PHP_VER}"-zip libjs-jquery libjs-jquery-mousewheel libmagic1t64 \
 	sqlite3
 
 # Install Roundcube from source if it is not already present or if it is out of date.
@@ -31,17 +35,17 @@ apt_install \
 # whether we have the latest version of everything.
 # For the latest versions, see:
 #   https://github.com/roundcube/roundcubemail/releases
-#   https://github.com/mfreiholz/persistent_login/commits/master
-#   https://github.com/stremlau/html5_notifier/commits/master
-#   https://github.com/mstilkerich/rcmcarddav/releases
+#   https://github.com/mfreiholz/Roundcube-Persistent-Login-Plugin/tags (version-5.3.0, latest)
+#   https://github.com/kitist/html5_notifier/commits/master
+#   https://github.com/mstilkerich/rcmcarddav/releases (5.x supports roundcube 1.7)
 # The easiest way to get the package hashes is to run this script and get the hash from
 # the error message.
-VERSION=1.6.20
-HASH=15c70410af3071219aae209ba89e2ff1dacb1ab5
-PERSISTENT_LOGIN_VERSION=bde7b6840c7d91de627ea14e81cf4133cbb3c07a # version 5.3
-HTML5_NOTIFIER_VERSION=68d9ca194212e15b3c7225eb6085dbcf02fd13d7 # version 0.6.4+
-CARDDAV_VERSION=4.4.3
-CARDDAV_HASH=74f8ba7aee33e78beb9de07f7f44b81f6071b644
+VERSION=1.7.5
+HASH=396b2fa0153bf6b4a8ab99f136b27e16d9f74e57
+PERSISTENT_LOGIN_VERSION=bde7b6840c7d91de627ea14e81cf4133cbb3c07a # version 5.3.0 (newest tag == master)
+HTML5_NOTIFIER_VERSION=5d85947e16ea9cac4544c59666fe0ff13ba2a44a # master 2023-06-28, version 0.6.4+
+CARDDAV_VERSION=5.1.5
+CARDDAV_HASH=6b291e67f6d54700aa9dc4a9801ea85f1c8e4bcb
 
 UPDATE_KEY=$VERSION:$PERSISTENT_LOGIN_VERSION:$HTML5_NOTIFIER_VERSION:$CARDDAV_VERSION
 
@@ -149,23 +153,31 @@ cat > $RCM_CONFIG <<EOF;
 ?>
 EOF
 
-# Configure CardDav
+# Configure CardDav (rcmcarddav >= 5 configuration format: accounts carry
+# 'accountname'/'discovery_url'; direct addressbooks go into
+# 'extra_addressbooks' because 'url' is no longer valid at account level).
 cat > ${RCM_PLUGIN_DIR}/carddav/config.inc.php <<EOF;
 <?php
 /* Do not edit. Written by Mail-in-a-Box. Regenerated on updates. */
 \$prefs['_GLOBAL']['hide_preferences'] = true;
-\$prefs['_GLOBAL']['suppress_version_warning'] = true;
 \$prefs['ownCloud'] = array(
-	 'name'         =>  'ownCloud',
+	 'accountname'  =>  'ownCloud',
 	 'username'     =>  '%u', // login username
 	 'password'     =>  '%p', // login password
-	 'url'          =>  'https://${PRIMARY_HOSTNAME}/cloud/remote.php/dav/addressbooks/users/%u/contacts/',
-	 'active'       =>  true,
-	 'readonly'     =>  false,
-	 'refresh_time' => '02:00:00',
+	 'preemptive_basic_auth' => true,
+	 'hide'         =>  false,
 	 'fixed'        =>  array('username','password'),
-	 'preemptive_auth' => '1',
-	 'hide'        =>  false,
+	 // discovery_url is omitted on purpose: addressbook discovery is
+	 // disabled and the fixed Nextcloud/ownCloud addressbook is used.
+	 'extra_addressbooks' => array(
+	 	array(
+	 		'name'         =>  'ownCloud',
+	 		'url'          =>  'https://${PRIMARY_HOSTNAME}/cloud/remote.php/dav/addressbooks/users/%u/contacts/',
+	 		'active'       =>  true,
+	 		'readonly'     =>  false,
+	 		'refresh_time' => '02:00:00',
+	 	),
+	 ),
 );
 ?>
 EOF
@@ -220,6 +232,7 @@ sed -i.miabold 's/^[^#]\+.\+PRAGMA journal_mode = WAL.\+$/#&/' \
 # Database should exist, created by migration script
 hide_output sqlite3 "$STORAGE_ROOT/mail/roundcube/roundcube.sqlite" 'PRAGMA journal_mode=WAL;'
 
-# Enable PHP modules.
-phpenmod -v "$PHP_VER" imap
+# No phpenmod needed here: every PHP module we apt-install enables itself
+# via its package maintainer scripts, and roundcube needs no imap module
+# (which no longer exists as a package for PHP >= 8.4 anyway).
 restart_service php"$PHP_VER"-fpm

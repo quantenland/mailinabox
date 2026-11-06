@@ -5,6 +5,12 @@
 source setup/functions.sh # load our functions
 source /etc/mailinabox.conf # load global vars
 
+# functions.sh pins PHP_VER for upstream's Ubuntu 22.04 base (php8.0 from
+# the ondrej PPA). Debian 13 ships php8.4 in the archive; use that instead.
+if grep -qs '^ID=debian' /etc/os-release; then
+	PHP_VER=8.4
+fi
+
 # ### Installing Nextcloud
 
 echo "Installing Nextcloud (contacts/calendar)..."
@@ -21,8 +27,8 @@ echo "Installing Nextcloud (contacts/calendar)..."
 #   we automatically install intermediate versions as needed.
 # * The hash is the SHA1 hash of the ZIP package, which you can find by just running this script and
 #   copying it from the error message when it doesn't match what is below.
-nextcloud_ver=27.1.11
-nextcloud_hash=9f30c01a021c2e5a9e7baff119955afb3c552ebc
+nextcloud_ver=34.0.5
+nextcloud_hash=dd2998ea28f8951cecab5e0e40eb44652686fa04
 
 # Nextcloud apps
 # --------------
@@ -36,16 +42,16 @@ nextcloud_hash=9f30c01a021c2e5a9e7baff119955afb3c552ebc
 # find by running: curl -sL <url> | sha1sum
 
 # Always ensure the versions are supported, see https://apps.nextcloud.com/apps/contacts
-contacts_ver=5.5.4
-contacts_hash=c4e3f2183a0088b829f8aa1b3af1f87c9a4c46a2
+contacts_ver=8.9.5
+contacts_hash=d0fb2f8f275f14be273a84f9b9a512e5e51e043b
 
 # Always ensure the versions are supported, see https://apps.nextcloud.com/apps/calendar
-calendar_ver=4.7.20
-calendar_hash=12d876904e227156e39ca4335b18481b42a6d00f
+calendar_ver=6.6.5
+calendar_hash=c235ac4624de55ff6a31b48a194cd344f20200f7
 
 # Always ensure the versions are supported, see https://apps.nextcloud.com/apps/user_external
-user_external_ver=3.4.0
-user_external_hash=7f9d8f4dd6adb85a0e3d7622d85eeb7bfe53f3b4
+user_external_ver=4.0.0
+user_external_hash=214497dd8691f279ba3740797c565310f0793054
 
 # Developer advice (test plan)
 # ----------------------------
@@ -66,9 +72,12 @@ user_external_hash=7f9d8f4dd6adb85a0e3d7622d85eeb7bfe53f3b4
 apt-get purge -qq -y owncloud* # we used to use the package manager
 
 apt_install curl php"${PHP_VER}" php"${PHP_VER}"-fpm \
-	php"${PHP_VER}"-cli php"${PHP_VER}"-sqlite3 php"${PHP_VER}"-gd php"${PHP_VER}"-imap php"${PHP_VER}"-curl \
-	php"${PHP_VER}"-dev php"${PHP_VER}"-gd php"${PHP_VER}"-xml php"${PHP_VER}"-mbstring php"${PHP_VER}"-zip php"${PHP_VER}"-apcu \
-	php"${PHP_VER}"-intl php"${PHP_VER}"-imagick php"${PHP_VER}"-gmp php"${PHP_VER}"-bcmath
+	php"${PHP_VER}"-cli php"${PHP_VER}"-sqlite3 php"${PHP_VER}"-gd php"${PHP_VER}"-curl \
+	php"${PHP_VER}"-xml php"${PHP_VER}"-mbstring php"${PHP_VER}"-zip php"${PHP_VER}"-apcu php"${PHP_VER}"-opcache \
+	php"${PHP_VER}"-intl php"${PHP_VER}"-imagick php"${PHP_VER}"-gmp php"${PHP_VER}"-bcmath \
+	libmagickcore-7.q16-10-extra
+# note: no php*-imap here -- Nextcloud's user_external IMAP backend uses the curl
+# extension, and Debian 13 no longer ships a php imap extension package at all.
 
 # Enable APC before Nextcloud tools are run.
 tools/editconf.py /etc/php/"$PHP_VER"/mods-available/apcu.ini -c ';' \
@@ -243,6 +252,37 @@ if [ ! -d /usr/local/lib/owncloud/ ] || [[ ! ${CURRENT_NEXTCLOUD_VER} =~ ^$nextc
 			InstallNextcloud 26.0.13 d5c10b650e5396d5045131c6d22c02a90572527c 5.5.3 b234ab410480a4106176a28f39c9b27f471d0473 4.7.6 cf8e68e7d945ee71933f5bb71a969faf152da55c 3.3.0 280d24eb2a6cb56b4590af8847f925c28d8d853e
 			CURRENT_NEXTCLOUD_VER="26.0.13"
 		fi
+		if [[ ${CURRENT_NEXTCLOUD_VER} =~ ^26 ]]; then
+			InstallNextcloud 27.1.11 9f30c01a021c2e5a9e7baff119955afb3c552ebc 5.5.4 c4e3f2183a0088b829f8aa1b3af1f87c9a4c46a2 4.7.20 12d876904e227156e39ca4335b18481b42a6d00f 3.4.0 7f9d8f4dd6adb85a0e3d7622d85eeb7bfe53f3b4
+			CURRENT_NEXTCLOUD_VER="27.1.11"
+		fi
+		if [[ ${CURRENT_NEXTCLOUD_VER} =~ ^27 ]]; then
+			InstallNextcloud 28.0.14 8a9edcfd26d318eb7d1cfa44d69796f2d1098a80 5.5.4 c4e3f2183a0088b829f8aa1b3af1f87c9a4c46a2 4.7.20 12d876904e227156e39ca4335b18481b42a6d00f 3.4.0 7f9d8f4dd6adb85a0e3d7622d85eeb7bfe53f3b4
+			CURRENT_NEXTCLOUD_VER="28.0.14"
+		fi
+		if [[ ${CURRENT_NEXTCLOUD_VER} =~ ^28 ]]; then
+			InstallNextcloud 29.0.16 ceb3014aaddc70d3074d2c69bc6afc76eb1aeff0 6.0.7 babb779107b029c30ad20b81da33b4f95e1136ff 4.7.20 12d876904e227156e39ca4335b18481b42a6d00f 3.4.0 7f9d8f4dd6adb85a0e3d7622d85eeb7bfe53f3b4
+			CURRENT_NEXTCLOUD_VER="29.0.16"
+		fi
+		if [[ ${CURRENT_NEXTCLOUD_VER} =~ ^29 ]]; then
+			# user_external 3.4.0 supports NC 25-29 only (4.0.0 needs NC 31+); on NC 30
+			# the updater disables it as incompatible and the final app:enable re-enables
+			# the 4.0.0 copy installed with the next step.
+			InstallNextcloud 30.0.17 0494197f1984ce8a2f83084c0759a24d48474017 7.3.19 bd680b3b96f09d013ff3a12eccb352b83f3bcd51 5.5.24 a7722f0511a1165e6a51c1944288ed4518723791 3.4.0 7f9d8f4dd6adb85a0e3d7622d85eeb7bfe53f3b4
+			CURRENT_NEXTCLOUD_VER="30.0.17"
+		fi
+		if [[ ${CURRENT_NEXTCLOUD_VER} =~ ^30 ]]; then
+			InstallNextcloud 31.0.14 a891fede2cd4cb3347a406da3fb4f99cd62c89ce 7.3.19 bd680b3b96f09d013ff3a12eccb352b83f3bcd51 5.5.24 a7722f0511a1165e6a51c1944288ed4518723791 4.0.0 214497dd8691f279ba3740797c565310f0793054
+			CURRENT_NEXTCLOUD_VER="31.0.14"
+		fi
+		if [[ ${CURRENT_NEXTCLOUD_VER} =~ ^31 ]]; then
+			InstallNextcloud 32.0.15 f13d45819bf2ec3fe83c9c3078324144eff45568 8.3.21 ee13e775ae9567dd8454d0d4a3e4393878658f6a 6.6.5 c235ac4624de55ff6a31b48a194cd344f20200f7 4.0.0 214497dd8691f279ba3740797c565310f0793054
+			CURRENT_NEXTCLOUD_VER="32.0.15"
+		fi
+		if [[ ${CURRENT_NEXTCLOUD_VER} =~ ^32 ]]; then
+			InstallNextcloud 33.0.10 debd92e9249192368108975433035e7b647563d9 8.9.5 d0fb2f8f275f14be273a84f9b9a512e5e51e043b 6.6.5 c235ac4624de55ff6a31b48a194cd344f20200f7 4.0.0 214497dd8691f279ba3740797c565310f0793054
+			CURRENT_NEXTCLOUD_VER="33.0.10"
+		fi
 	fi
 
 	InstallNextcloud $nextcloud_ver $nextcloud_hash $contacts_ver $contacts_hash $calendar_ver $calendar_hash $user_external_ver $user_external_hash
@@ -265,7 +305,9 @@ if [ ! -f "$STORAGE_ROOT/owncloud/owncloud.db" ]; then
 
   'instanceid' => '$instanceid',
 
-  'forcessl' => true, # if unset/false, Nextcloud sends a HSTS=0 header, which conflicts with nginx config
+  # Note: do not set 'forcessl' here; it has not been a recognized
+  # setting since ownCloud. HTTPS redirection and the HSTS header are
+  # handled by the nginx configuration.
 
   'overwritewebroot' => '/cloud',
   'overwrite.cli.url' => '/cloud',
@@ -337,6 +379,9 @@ include("$STORAGE_ROOT/owncloud/config.php");
 
 \$CONFIG['logtimezone'] = '$TIMEZONE';
 \$CONFIG['logdateformat'] = 'Y-m-d H:i:s';
+
+# Silence the NC 28+ setup check about an unset maintenance window.
+\$CONFIG['maintenance_window_start'] = 1;
 
 \$CONFIG['user_backends'] = array(
   array(

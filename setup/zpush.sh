@@ -15,11 +15,17 @@ source /etc/mailinabox.conf # load global vars
 
 # Prereqs.
 
+# The PHP imap extension is a hard runtime requirement of z-push's IMAP
+# backend. It is a regular package for PHP <= 8.3, but PHP >= 8.4 packages
+# (e.g. Debian 13) no longer include it, so install it only if the distro
+# provides it for the running PHP version.
 echo "Installing Z-Push (Exchange/ActiveSync server)..."
 apt_install \
-       php"${PHP_VER}"-soap php"${PHP_VER}"-imap libawl-php php"$PHP_VER"-xml php"${PHP_VER}"-intl
-
-phpenmod -v "$PHP_VER" imap
+       php"${PHP_VER}"-soap libawl-php php"$PHP_VER"-xml php"${PHP_VER}"-intl
+if apt-cache show "php${PHP_VER}-imap" >/dev/null 2>&1; then
+       apt_install "php${PHP_VER}-imap"
+       phpenmod -v "$PHP_VER" imap
+fi
 
 # Copy Z-Push into place.
 VERSION=2.7.7
