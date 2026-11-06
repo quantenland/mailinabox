@@ -52,9 +52,15 @@ tools/editconf.py /etc/dovecot/conf.d/10-master.conf \
 # The inotify `max_user_instances` default is 128, which constrains
 # the total number of watched (IMAP IDLE push) folders by open connections.
 # See http://www.dovecot.org/pipermail/dovecot/2013-March/088834.html.
+#
+# Use a /etc/sysctl.d/ drop-in rather than /etc/sysctl.conf: Debian 13
+# (trixie) no longer ships or honors /etc/sysctl.conf. Drop-ins work on
+# Ubuntu as well. editconf.py requires the target file to exist.
 # A reboot is required for this to take effect (which we don't do as
 # as a part of setup). Test with `cat /proc/sys/fs/inotify/max_user_instances`.
-tools/editconf.py /etc/sysctl.conf \
+mkdir -p /etc/sysctl.d
+touch /etc/sysctl.d/99-mailinabox.conf
+tools/editconf.py /etc/sysctl.d/99-mailinabox.conf \
 	fs.inotify.max_user_instances=1024
 
 # Set the location where we'll store user mailboxes. '%d' is the domain name and '%n' is the
