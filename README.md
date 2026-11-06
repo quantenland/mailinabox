@@ -1,11 +1,11 @@
-Mail-in-a-Box
-=============
+Mail-in-a-Box for Debian 13
+============================
 
-By [@JoshData](https://github.com/JoshData) and [contributors](https://github.com/mail-in-a-box/mailinabox/graphs/contributors).
+This is the [quantenland](https://github.com/quantenland/mailinabox) port of [Mail-in-a-Box](https://mailinabox.email) to **Debian 13 (trixie)**. Upstream Mail-in-a-Box, by [@JoshData](https://github.com/JoshData) and [contributors](https://github.com/mail-in-a-box/mailinabox/graphs/contributors), targets Ubuntu 22.04. This branch (`debian13`) is based on upstream v78 and installs onto a fresh Debian 13 amd64 machine.
 
 Mail-in-a-Box helps individuals take back control of their email by defining a one-click, easy-to-deploy SMTP+everything else server: a mail server in a box.
 
-**Please see [https://mailinabox.email](https://mailinabox.email) for the project's website and setup guide!**
+The upstream project website is [https://mailinabox.email](https://mailinabox.email). Use this README for installing **this** port. The upstream setup guide still describes Ubuntu 22.04.
 
 * * *
 
@@ -23,7 +23,7 @@ Additionally, this project has a [Code of Conduct](CODE_OF_CONDUCT.md), which su
 In The Box
 ----------
 
-Mail-in-a-Box turns a fresh Ubuntu 22.04 LTS 64-bit machine into a working mail server by installing and configuring various components.
+Mail-in-a-Box turns a fresh Debian 13 (trixie) 64-bit machine into a working mail server by installing and configuring various components.
 
 It is a one-click email appliance. There are no user-configurable setup options. It "just works."
 
@@ -49,31 +49,85 @@ It also supports static website hosting since the box is serving HTTPS anyway. (
 For more information on how Mail-in-a-Box handles your privacy, see the [security details page](security.md).
 
 
+What changed for Debian 13
+--------------------------
+
+Debian 13 does not have the Ubuntu package set Mail-in-a-Box v78 was written for. This port follows the versions in the Debian 13 archive:
+
+* PHP 8.4, Nextcloud 34.0.5 (with the one-major-version upgrade ladder from 27), Roundcube 1.7.5, Z-Push 2.7.7
+* Postfix 3.10 and Dovecot 2.4, including the Dovecot 2.4 configuration syntax
+* Spam learning via Dovecot imapsieve and `sa-learn` (`dovecot-antispam` is not in Debian 13)
+* SpamPD settings in `/etc/spampd.cfg`
+* The management daemon on Python 3.13, in a virtualenv created with `python3 -m venv`
+* `ntpsec` for clock sync. No Ubuntu PPAs
+
+Full-text search of mailboxes is not enabled. Upstream installed `dovecot-lucene` from its own PPA, and Debian 13 does not ship that plugin.
+
+The machine must be Debian 13 amd64, with nothing else already installed on it. A cloud image or a VPS installed from the Debian 13 netinst is the expected starting point. The scripts take over the web server, the DNS resolver, and the firewall.
+
+
 Installation
 ------------
 
-See the [setup guide](https://mailinabox.email/guide.html) for detailed, user-friendly instructions.
+You need a fresh Debian 13 amd64 machine with a public IPv4 address, at least 1 GB of RAM (2 GB is comfortable), and a hostname you can put in DNS. SSH in as root, or as a user that can `sudo`.
 
-For experts, start with a completely fresh (really, I mean it) Ubuntu 22.04 LTS 64-bit machine. On the machine...
+### One-step install
 
-Clone this repository and checkout the tag corresponding to the most recent release (which you can find in the tags or releases lists on GitHub):
+This downloads `setup/bootstrap.sh` from the `debian13` branch, clones this repository to `/root/mailinabox`, and runs setup:
 
-	$ git clone https://github.com/mail-in-a-box/mailinabox
-	$ cd mailinabox
-	$ git checkout TAGNAME
+	curl -fsSL https://raw.githubusercontent.com/quantenland/mailinabox/debian13/setup/bootstrap.sh | sudo bash
 
-Begin the installation.
+If you are already root and `sudo` is not installed yet, drop the `sudo`.
 
-	$ sudo setup/start.sh
+Setup asks for the box hostname and an initial mail user. To run it without prompts, export these before the curl command (or before `setup/start.sh`):
 
-The installation will install, uninstall, and configure packages to turn the machine into a working, good mail server.
+	export NONINTERACTIVE=1
+	export PRIMARY_HOSTNAME=box.example.com
+	export PUBLIC_IP=auto
+	export PUBLIC_IPV6=auto
+	export SKIP_NETWORK_CHECKS=1   # only if the machine cannot yet see itself in public DNS
 
-For help, DO NOT contact Josh directly --- I don't do tech support by email or tweet (no exceptions).
+`PUBLIC_IP=auto` asks a public HTTP service for this machine's address.
 
-Post your question on the [discussion forum](https://discourse.mailinabox.email/) instead, where maintainers and Mail-in-a-Box users may be able to help you.
+### Install from a checkout
 
-Note that while we want everything to "just work," we can't control the rest of the Internet. Other mail services might block or spam-filter email sent from your Mail-in-a-Box.
-This is a challenge faced by everyone who runs their own mail server, with or without Mail-in-a-Box. See our discussion forum for tips about that.
+Use this when you want to read the scripts first, or when you are working on the port:
+
+	sudo apt-get update
+	sudo apt-get install -y git ca-certificates
+	git clone -b debian13 https://github.com/quantenland/mailinabox
+	cd mailinabox
+	sudo setup/start.sh
+
+### Local virtual machine
+
+Contributors can boot a Debian 13 VM with Vagrant and VirtualBox. From a checkout of this branch:
+
+	vagrant up --provider=virtualbox --provision
+
+The Vagrantfile uses the `bento/debian-13` box because the official `debian/trixie64` box is published for libvirt only.
+
+The guest gets 2 GB of RAM and the address `192.168.56.4`. See [CONTRIBUTING.md](CONTRIBUTING.md). The first provision downloads Debian packages and the Nextcloud/Roundcube tarballs, so it takes a while and needs a working network.
+
+### Updating
+
+Setup is idempotent. On a machine installed with the one-step command, run that command again. It fast-forwards `/root/mailinabox` to the latest `debian13` commit and runs setup again.
+
+From a checkout you maintain yourself:
+
+	cd mailinabox
+	git pull --ff-only
+	sudo mailinabox
+
+`mailinabox` is installed on the box the first time setup succeeds. It re-runs setup from the directory setup was last started in.
+
+### After setup
+
+The control panel is at `https://<your-hostname>/admin`. If DNS is not pointed at the box yet, use `https://<public-ip>/admin` and compare the certificate fingerprint that setup prints.
+
+This port is not the upstream project. Please don't file issues about it on the upstream tracker or ask the upstream maintainers for support. Questions about this port belong on https://github.com/quantenland/mailinabox.
+
+Other mail services might still block or spam-filter email sent from a new server. That is true of any mail host you run yourself. The upstream [discussion forum](https://discourse.mailinabox.email/) has a lot of operational experience on that problem.
 
 
 Contributing and Development

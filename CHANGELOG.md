@@ -1,6 +1,18 @@
 CHANGELOG
 =========
 
+Debian 13 port (unreleased, branch `debian13`)
+----------------------------------------------
+
+Port of upstream Mail-in-a-Box v78 from Ubuntu 22.04 to Debian 13 (trixie).
+Install with `setup/bootstrap.sh` on a fresh Debian 13 amd64 machine. See README.md.
+
+* Base system is Debian 13. Ubuntu PPAs are gone. Time sync uses `ntpsec`.
+* PHP 8.4, Nextcloud 34.0.5, Roundcube 1.7.5, Postfix 3.10, Dovecot 2.4, Python 3.13.
+* Dovecot 2.4 configuration (mail paths, SQL auth, sieve, imapsieve). `dovecot-antispam` is replaced by imapsieve + `sa-learn`. Full-text search (`dovecot-lucene`) is not installed; Debian does not ship that plugin.
+* SpamPD is configured in `/etc/spampd.cfg` (Debian 13 removed `/etc/default/spampd`).
+* Management daemon dependencies are pinned for Python 3.13 and installed in a stdlib virtualenv.
+
 Version 78 (October 22, 2026)
 -----------------------------
 

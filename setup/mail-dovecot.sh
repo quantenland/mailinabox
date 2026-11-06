@@ -19,9 +19,9 @@ source setup/functions.sh # load our functions
 source /etc/mailinabox.conf # load global vars
 
 
-# Install packages for dovecot. These are all core dovecot plugins,
-# but dovecot-lucene is packaged by *us* in the Mail-in-a-Box PPA,
-# not by Ubuntu.
+# Install packages for dovecot. These are the core plugins shipped in Debian 13.
+# Upstream also installed dovecot-lucene from its own PPA for full-text search.
+# Debian 13 has no dovecot-lucene package, so this port does not enable FTS.
 
 echo "Installing Dovecot (IMAP server)..."
 apt_install \

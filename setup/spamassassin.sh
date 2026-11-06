@@ -44,16 +44,17 @@ mkdir -p /etc/spamassassin/pyzor
 echo "public.pyzor.org:24441" > /etc/spamassassin/pyzor/servers
 # check with: pyzor --homedir /etc/mail/spamassassin/pyzor ping
 
-# Configure spampd:
-# * Pass messages on to docevot on port 10026. This is actually the default setting but we don't
-#   want to lose track of it. (We've configured Dovecot to listen on this port elsewhere.)
-# * Increase the maximum message size of scanned messages from the default of 64KB to 500KB, which
-#   is Spamassassin (spamc)'s own default. Specified in KBytes.
-# * Disable localmode so Pyzor, DKIM and DNS checks can be used.
-tools/editconf.py /etc/default/spampd \
-	DESTPORT=10026 \
-	ADDOPTS="\"--maxsize=2000\"" \
-	LOCALONLY=0
+# Configure spampd.
+# Debian 13's spampd 2.62 dropped /etc/default/spampd. systemd starts
+# `spampd --config /etc/spampd.cfg`, and the packaged cfg turns network tests
+# off (local-only 1) and leaves maxsize at the program default of 64KB.
+# * relayport 10026 is already the packaged default (Dovecot's LMTP).
+# * Scan messages up to 2000KB, SpamAssassin's own default, instead of 64KB.
+# * local-only 0 enables Pyzor, DKIM and DNS checks.
+tools/editconf.py /etc/spampd.cfg -s \
+	local-only=0 \
+	maxsize=2000 \
+	relayport=10026
 
 # Spamassassin normally wraps spam as an attachment inside a fresh
 # email with a report about the message. This also protects the user
@@ -151,14 +152,14 @@ chown -R spampd:spampd "$STORAGE_ROOT/mail/spamassassin"
 # script that pipes the message to sa-learn. (This replaces the dovecot-antispam
 # plugin, which no longer exists in Debian 13 / Dovecot 2.4.)
 #
-# The `imap_sieve` IMAP plugin hooks IMAP events; the `sieve_imapsieve` sieve
-# plugin and `sieve_extprograms` (for the `vnd.dovecot.pipe` action) are sieve
-# plugins configured in `sieve_plugins`. The rules follow the form of the example
-# at https://doc.dovecot.org/2.4.1/core/plugins/imap_sieve.html: scripts in a
-# `mailbox Spam { }` block run on mail copied/appended into the Spam folder, and
-# scripts in an `imapsieve_from Spam { }` block run on mail copied out of it.
-# The mailbox name matches conf/dovecot-mailboxes.conf and the global
-# spam-delivery sieve rule, which both use "Spam".
+# The `imap_sieve` IMAP plugin hooks IMAP events. In Dovecot 2.4 both
+# `sieve_plugins` and `sieve_script_cause` are boolean lists (the short name
+# inside a sieve_script block is `cause`). See
+# https://doc.dovecot.org/2.4.1/core/plugins/imap_sieve.html
+# Scripts in a `mailbox Spam { }` block run on mail copied or appended into
+# the Spam folder, and scripts in an `imapsieve_from Spam { }` block run on
+# mail copied out of it. The mailbox name matches conf/dovecot-mailboxes.conf
+# and the global spam-delivery sieve rule, which both use "Spam".
 cat > /etc/dovecot/conf.d/99-local-imapsieve.conf << EOF;
 sieve_plugins {
   sieve_imapsieve = yes
@@ -169,20 +170,25 @@ sieve_global_extensions {
   vnd.dovecot.pipe = yes
 }
 
-# Mail copied/moved/appended into Spam: learn as spam.
+# Mail copied or appended into Spam: learn as spam.
 mailbox Spam {
   sieve_script learn_spam {
     type = before
-    cause = copy append
+    cause {
+      copy = yes
+      append = yes
+    }
     path = /etc/dovecot/sieve/learn-spam.sieve
   }
 }
 
-# Mail copied/moved out of Spam: relearn as ham.
+# Mail copied out of Spam: relearn as ham.
 imapsieve_from Spam {
   sieve_script learn_ham {
     type = before
-    cause = copy
+    cause {
+      copy = yes
+    }
     path = /etc/dovecot/sieve/learn-ham.sieve
   }
 }

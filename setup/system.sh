@@ -220,11 +220,13 @@ fi
 echo "Initializing system random number generator..."
 dd if=/dev/random of=/dev/urandom bs=1 count=32 2> /dev/null
 
-# This is supposedly sufficient. But because we're not sure if hardware entropy
-# is really any good on virtualized systems, we'll also seed from Ubuntu's
-# pollinate servers:
-
-pollinate  -q -r
+# Also mix in a remote seed. pollinate is packaged on Debian 13 and talks to
+# the public pollen pool. A failure here must not abort setup: the Debian 13
+# kernel blocks until its RNG is initialized, so /dev/urandom is already seeded
+# by the time this script runs.
+if ! pollinate -q -r; then
+	echo "pollinate could not fetch a remote entropy seed; continuing."
+fi
 
 # Between these two, we really ought to be all set.
 
@@ -331,20 +333,25 @@ if ! grep -q "max-recursion-queries " /etc/bind/named.conf.options; then
 	sed -i "s/^}/\n\tmax-recursion-queries 100;\n}/" /etc/bind/named.conf.options
 fi
 
-# First we'll disable systemd-resolved's management of resolv.conf and its stub server.
-# Breaking the symlink to /run/systemd/resolve/stub-resolv.conf means
-# systemd-resolved will read it for DNS servers to use. Put in 127.0.0.1,
-# which is where bind9 will be running. Obviously don't do this before
-# installing bind9 or else apt won't be able to resolve a server to
-# download bind9 from.
+# First we'll disable systemd-resolved's management of resolv.conf and its stub server,
+# on images that ship it. Debian 13 cloud images often do not install
+# systemd-resolved at all (Ubuntu images do). Breaking the symlink to
+# /run/systemd/resolve/stub-resolv.conf means systemd-resolved will read
+# resolv.conf for DNS servers to use. Put in 127.0.0.1, which is where bind9
+# will be running. Obviously don't do this before installing bind9 or else apt
+# won't be able to resolve a server to download bind9 from.
 rm -f /etc/resolv.conf
-tools/editconf.py /etc/systemd/resolved.conf DNSStubListener=no
+if [ -f /etc/systemd/resolved.conf ]; then
+	tools/editconf.py /etc/systemd/resolved.conf DNSStubListener=no
+fi
 echo "nameserver 127.0.0.1" > /etc/resolv.conf
 
 # Restart the DNS services.
 
 restart_service bind9
-systemctl restart systemd-resolved
+if systemctl cat systemd-resolved.service >/dev/null 2>&1; then
+	restart_service systemd-resolved
+fi
 
 # ### Fail2Ban Service
 

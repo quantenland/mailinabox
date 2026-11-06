@@ -35,18 +35,20 @@ sed -i "s/#\(\!include auth-sql.conf.ext\)/\1/"  /etc/dovecot/conf.d/10-auth.con
 # Specify how the database is to be queried for user authentication (passdb)
 # and where user mailboxes are stored (userdb).
 #
-# Dovecot 2.4 (Debian 13) syntax: the SQL connection settings are global
-# (sql_driver/sql_connect) and each passdb/userdb block carries its own query.
-# Named userdb extra fields override settings, so the per-user quota comes back
-# as quota_storage_size (bytes with a 'B' suffix) instead of the old quota_rule.
+# Dovecot 2.4 (Debian 13) syntax, matching the SQLite example in
+# https://doc.dovecot.org/2.4.1/core/config/auth/databases/sql.html :
+# the connection is global (sql_driver + sqlite_path; there is no sql_connect
+# setting), and inside a passdb/userdb block the settings use their short names
+# (query, not passdb_sql_query). A quota of 0 is stored as 0B, which Dovecot
+# treats as unlimited. See https://doc.dovecot.org/2.4.1/core/plugins/quota.html
 cat > /etc/dovecot/conf.d/auth-sql.conf.ext << EOF;
 passdb sql {
-  passdb_default_password_scheme = SHA512-CRYPT
-  passdb_sql_query = SELECT email AS user, password FROM users WHERE email = '%{user}';
+  default_password_scheme = SHA512-CRYPT
+  query = SELECT email AS user, password FROM users WHERE email = '%{user}';
 }
 userdb sql {
-  userdb_sql_query = SELECT email AS user, '$STORAGE_ROOT/mail/mailboxes/' || '%{user | domain}' || '/' || '%{user | username}' AS home, quota || 'B' AS quota_storage_size FROM users WHERE email = '%{user}';
-  userdb_sql_iterate_query = SELECT email AS user FROM users;
+  query = SELECT email AS user, '$STORAGE_ROOT/mail/mailboxes/' || '%{user | domain}' || '/' || '%{user | username}' AS home, quota || 'B' AS quota_storage_size FROM users WHERE email = '%{user}';
+  iterate_query = SELECT email AS user FROM users;
 }
 EOF
 
@@ -54,7 +56,7 @@ EOF
 cat > /etc/dovecot/conf.d/99-local-sql.conf << EOF;
 # SQL connection shared by the passdb/userdb blocks (Dovecot 2.4).
 sql_driver = sqlite
-sql_connect = $db_path
+sqlite_path = $db_path
 EOF
 chmod 0600 /etc/dovecot/conf.d/99-local-sql.conf # contains nothing secret, but match historic perms
 

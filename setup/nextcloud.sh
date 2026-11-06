@@ -5,12 +5,6 @@
 source setup/functions.sh # load our functions
 source /etc/mailinabox.conf # load global vars
 
-# functions.sh pins PHP_VER for upstream's Ubuntu 22.04 base (php8.0 from
-# the ondrej PPA). Debian 13 ships php8.4 in the archive; use that instead.
-if grep -qs '^ID=debian' /etc/os-release; then
-	PHP_VER=8.4
-fi
-
 # ### Installing Nextcloud
 
 echo "Installing Nextcloud (contacts/calendar)..."
