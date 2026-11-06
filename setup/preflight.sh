@@ -8,12 +8,25 @@ if [[ $EUID -ne 0 ]]; then
 	exit 1
 fi
 
-# Check that we are running on Ubuntu 22.04 LTS (or 22.04.xx).
+# Check that we are running on Debian 13 or Ubuntu 22.04 LTS.
 # Pull in the variables defined in /etc/os-release but in a
 # namespace to avoid polluting our variables.
 source <(cat /etc/os-release | sed s/^/OS_RELEASE_/)
-if [ "${OS_RELEASE_ID:-}" != "ubuntu" ] || [ "${OS_RELEASE_VERSION_ID:-}" != "22.04" ]; then
-	echo "Mail-in-a-Box only supports being installed on Ubuntu 22.04, sorry. You are running:"
+if [ "${OS_RELEASE_ID:-}" = "debian" ]; then
+	# Debian 13 (trixie) or a 13.x point release.
+	case "${OS_RELEASE_VERSION_ID:-}" in
+		13|13.*) ;;
+		*) echo "Mail-in-a-Box (quantenland fork) only supports Debian 13, sorry. You are running:"
+		   echo
+		   echo "${OS_RELEASE_ID:-"Unknown linux distribution"} ${OS_RELEASE_VERSION_ID:-}"
+		   exit 1
+		   ;;
+	esac
+elif [ "${OS_RELEASE_ID:-}" = "ubuntu" ] && [ "${OS_RELEASE_VERSION_ID:-}" = "22.04" ]; then
+	# Upstream's target; kept so upstream changes stay mergeable.
+	:
+else
+	echo "Mail-in-a-Box (quantenland fork) supports Debian 13 (and upstream's Ubuntu 22.04), sorry. You are running:"
 	echo
 	echo "${OS_RELEASE_ID:-"Unknown linux distribution"} ${OS_RELEASE_VERSION_ID:-}"
 	echo
