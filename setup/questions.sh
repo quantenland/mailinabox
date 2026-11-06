@@ -16,7 +16,13 @@ if [ -z "${NONINTERACTIVE:-}" ]; then
 	# Installing email_validator is repeated in setup/management.sh, but in setup/management.sh
 	# we install it inside a virtualenv. In this script, we don't have the virtualenv yet
 	# so we install the python package globally.
-	hide_output pip3 install "email_validator>=1.0.0" || exit 1
+	# On Debian 12+ the system Python is externally managed, so pip needs
+	# --break-system-packages (older Ubuntu pip does not know that flag).
+	PIP_FLAGS=
+	if grep -qs '^ID=debian' /etc/os-release; then
+		PIP_FLAGS="--break-system-packages"
+	fi
+	hide_output pip3 install $PIP_FLAGS "email_validator>=1.0.0" || exit 1
 
 	message_box "Mail-in-a-Box Installation" \
 		"Hello and thanks for deploying a Mail-in-a-Box!

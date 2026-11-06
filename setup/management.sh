@@ -14,12 +14,14 @@ echo "Installing Mail-in-a-Box system management daemon..."
 #
 # certbot installs EFF's certbot which we use to
 # provision free TLS certificates.
-apt_install duplicity python3-pip virtualenv certbot rsync
+apt_install duplicity python3-pip python3-venv certbot rsync
 
 # b2sdk is used for backblaze backups.
 # boto3 is used for amazon aws backups.
-# Both are installed outside the pipenv, so they can be used by duplicity
-hide_output pip3 install --upgrade b2sdk boto3
+# Both are installed outside the virtualenv, so they can be used by duplicity.
+# (Debian 12+ marks the system Python environment as externally-managed,
+# so --break-system-packages is required for installs outside a venv.)
+hide_output pip3 install --break-system-packages --upgrade b2sdk boto3
 
 # Create a virtualenv for the installation of Python 3 packages
 # used by the management daemon.
@@ -27,13 +29,11 @@ inst_dir=/usr/local/lib/mailinabox
 mkdir -p $inst_dir
 venv=$inst_dir/env
 if [ ! -d $venv ]; then
-	# A bug specific to Ubuntu 22.04 and Python 3.10 requires
-	# forcing a virtualenv directory layout option (see #2335
-	# and https://github.com/pypa/virtualenv/pull/2415). In
-	# our issue, reportedly installing python3-distutils didn't
-	# fix the problem.)
-	export DEB_PYTHON_INSTALL_LAYOUT='deb'
-	hide_output virtualenv -ppython3 $venv
+	# Use the stdlib venv module. The old `virtualenv -ppython3` bootstrap
+	# depended on python3-distutils, which no longer exists on Debian 13
+	# (trixie ships Python 3.13, and distutils was removed from the stdlib
+	# in Python 3.12).
+	hide_output python3 -m venv $venv
 fi
 
 # Upgrade pip because the Ubuntu-packaged version is out of date.
@@ -42,12 +42,14 @@ hide_output $venv/bin/pip install --upgrade pip
 # Install other Python 3 packages used by the management daemon.
 # The first line is the packages that Josh maintains himself!
 # NOTE: email_validator is repeated in setup/questions.sh, so please keep the versions synced.
+# All versions are pinned to the newest releases supporting Python 3.13
+# (verified against the PyPI JSON API; requires_python and wheel tags checked).
 hide_output $venv/bin/pip install --upgrade \
-	rtyaml "email_validator>=1.0.0" "exclusiveprocess" \
-	flask dnspython python-dateutil expiringdict gunicorn \
-	qrcode[pil] pyotp \
-	"idna>=2.0.0" "cryptography==37.0.2" psutil postfix-mta-sts-resolver \
-	b2sdk boto3
+	rtyaml==1.0.0 "email_validator==2.3.0" "exclusiveprocess==0.9.4" \
+	"flask==3.1.3" "dnspython==2.9.2" "python-dateutil==2.9.0.post0" "expiringdict==1.2.2" "gunicorn==26.2.0" \
+	"qrcode[pil]==8.2" "pyotp==2.10.0" \
+	"idna==3.20" "cryptography==50.0.2" "psutil==7.2.2" "postfix-mta-sts-resolver==1.5.1" \
+	"b2sdk==2.13.2" "boto3==1.43.125"
 
 # CONFIGURATION
 
