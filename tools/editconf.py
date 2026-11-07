@@ -76,8 +76,14 @@ for setting in settings:
 
 found = set()
 buf = ""
-with open(filename, encoding="utf-8") as f:
-        input_lines = list(f)
+# Debian 13 no longer ships some legacy files the setup scripts edit
+# (for example /etc/sysctl.conf). Create the file when it is missing so
+# the new settings can be written. The parent directory must already exist.
+try:
+	with open(filename, encoding="utf-8") as f:
+		input_lines = list(f)
+except FileNotFoundError:
+	input_lines = []
 
 while len(input_lines) > 0:
 	line = input_lines.pop(0)

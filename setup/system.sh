@@ -92,27 +92,49 @@ tools/editconf.py /etc/default/motd-news ENABLED=0
 rm -f /var/cache/motd-news
 fi
 
-# ### Add PPAs.
+# ### Add package repositories.
 
-# We install some non-standard Ubuntu packages maintained by other
-# third-party providers. First ensure add-apt-repository is installed.
-
-if [ ! -f /usr/bin/add-apt-repository ]; then
-	echo "Installing add-apt-repository..."
+if on_debian; then
+	# Ubuntu PPAs and the "universe" component do not exist on Debian, and
+	# software-properties-common is not in Debian 13. Trixie ships PHP 8.4,
+	# but php-imap was removed. packages.sury.org is the Debian build of the
+	# same PHP archive as ppa:ondrej/php. It supplies php8.4 with imap for
+	# Roundcube, Nextcloud, and Z-Push. Duplicity comes from Debian itself.
+	echo "Configuring the Debian PHP repository..."
 	hide_output apt-get update
-	apt_install software-properties-common
+	apt_install ca-certificates curl lsb-release
+	hide_output curl -fsSLo /tmp/debsuryorg-archive-keyring.deb https://packages.sury.org/debsuryorg-archive-keyring.deb
+	hide_output dpkg -i /tmp/debsuryorg-archive-keyring.deb
+	php_codename=$(. /etc/os-release && printf '%s' "${VERSION_CODENAME}")
+	echo "deb [signed-by=/usr/share/keyrings/debsuryorg-archive-keyring.gpg] https://packages.sury.org/php/ ${php_codename} main" > /etc/apt/sources.list.d/php.list
+	# Prefer this archive over Debian's PHP 8.4 so the interpreter and
+	# php8.4-imap stay on one build.
+	cat > /etc/apt/preferences.d/mailinabox-php <<EOF
+Package: php8.4*
+Pin: origin packages.sury.org
+Pin-Priority: 700
+EOF
+else
+	# We install some non-standard Ubuntu packages maintained by other
+	# third-party providers. First ensure add-apt-repository is installed.
+
+	if [ ! -f /usr/bin/add-apt-repository ]; then
+		echo "Installing add-apt-repository..."
+		hide_output apt-get update
+		apt_install software-properties-common
+	fi
+
+	# Ensure the universe repository is enabled since some of our packages
+	# come from there and minimal Ubuntu installs may have it turned off.
+	hide_output add-apt-repository -y universe
+
+	# Install the duplicity PPA.
+	hide_output add-apt-repository -y ppa:duplicity-team/duplicity-release-git
+
+	# Ubuntu 22.04 ships PHP 8.1. Nextcloud 35 needs PHP 8.4, which this
+	# archive provides.
+	hide_output add-apt-repository --y ppa:ondrej/php
 fi
-
-# Ensure the universe repository is enabled since some of our packages
-# come from there and minimal Ubuntu installs may have it turned off.
-hide_output add-apt-repository -y universe
-
-# Install the duplicity PPA.
-hide_output add-apt-repository -y ppa:duplicity-team/duplicity-release-git
-
-# Stock PHP is now 8.1, but we're transitioning through 8.0 because
-# of Nextcloud.
-hide_output add-apt-repository --y ppa:ondrej/php
 
 # ### Update Packages
 
@@ -147,10 +169,16 @@ apt_get_quiet autoremove
 # * openssh-client: provides ssh-keygen
 
 echo "Installing system packages..."
+# Debian 13 removed the ntp package. ntpsec is the replacement and
+# provides the same time-daemon facility.
+TIME_PKG=ntp
+if ! apt_package_available ntp && apt_package_available ntpsec; then
+	TIME_PKG=ntpsec
+fi
 apt_install python3 python3-dev python3-pip python3-setuptools \
 	netcat-openbsd wget curl git sudo coreutils bc file \
 	pollinate openssh-client unzip \
-	unattended-upgrades cron ntp fail2ban rsyslog
+	unattended-upgrades cron "$TIME_PKG" fail2ban rsyslog
 
 # ### Suppress Upgrade Prompts
 # When Ubuntu 20 comes out, we don't want users to be prompted to upgrade,
@@ -175,10 +203,10 @@ fi
 # not likely the user will want to change this, so we only ask on first
 # setup.
 if [ -z "${NONINTERACTIVE:-}" ]; then
-	if [ ! -f /etc/timezone ] || [ -n "${FIRST_TIME_SETUP:-}" ]; then
-		# If the file is missing or this is the user's first time running
-		# Mail-in-a-Box setup, run the interactive timezone configuration
-		# tool.
+	if [ -n "${FIRST_TIME_SETUP:-}" ]; then
+		# Ask only on first setup. Changing the zone later confuses
+		# fail2ban, and a missing /etc/timezone is not proof that the
+		# zone is unset: Debian 13's tzdata never creates that file.
 		dpkg-reconfigure tzdata
 		restart_service rsyslog
 	fi
@@ -190,6 +218,20 @@ else
 		echo "Etc/UTC" > /etc/timezone
 		restart_service rsyslog
 	fi
+fi
+
+# Debian 13 records the zone as the /etc/localtime symlink and does not
+# create /etc/timezone. Nextcloud and Z-Push read that file.
+if [ ! -f /etc/timezone ]; then
+	tz="Etc/UTC"
+	if [ -e /etc/localtime ]; then
+		resolved=$(readlink -f /etc/localtime || true)
+		stripped=${resolved#/usr/share/zoneinfo/}
+		if [ -n "${stripped:-}" ] && [ "$stripped" != "$resolved" ]; then
+			tz=$stripped
+		fi
+	fi
+	printf '%s\n' "$tz" > /etc/timezone
 fi
 
 # ### Seed /dev/urandom
@@ -358,13 +400,21 @@ fi
 # installing bind9 or else apt won't be able to resolve a server to
 # download bind9 from.
 rm -f /etc/resolv.conf
-tools/editconf.py /etc/systemd/resolved.conf DNSStubListener=no
+# systemd-resolved is installed by default on Ubuntu and only sometimes on
+# Debian. Its configuration file is not shipped when the package is absent,
+# and editing a missing file aborts setup.
+if [ -e /usr/lib/systemd/system/systemd-resolved.service ] || [ -e /lib/systemd/system/systemd-resolved.service ]; then
+	[ -e /etc/systemd/resolved.conf ] || touch /etc/systemd/resolved.conf
+	tools/editconf.py /etc/systemd/resolved.conf DNSStubListener=no
+fi
 echo "nameserver 127.0.0.1" > /etc/resolv.conf
 
 # Restart the DNS services.
 
 restart_service bind9
-systemctl restart systemd-resolved
+if [ -e /usr/lib/systemd/system/systemd-resolved.service ] || [ -e /lib/systemd/system/systemd-resolved.service ]; then
+	systemctl restart systemd-resolved
+fi
 
 # ### Fail2Ban Service
 

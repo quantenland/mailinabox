@@ -19,6 +19,14 @@ if [ -z "$TAG" ]; then
 	# want to display in status checks.
 	#
 	# Allow point-release versions of the major releases, e.g. 22.04.1 is OK.
+	# Debian is identified from os-release because lsb_release is not
+	# installed on a minimal Debian image. The first TAG= line below must
+	# stay the latest supported release; status checks read it.
+	. /etc/os-release
+	if [ "${ID:-}" = "debian" ] && [ "${VERSION_ID:-}" = "13" ]; then
+		# Debian 13 (trixie). Same Mail-in-a-Box release series as Ubuntu 22.04.
+		TAG=v78
+	else
 	UBUNTU_VERSION=$( lsb_release -d | sed 's/.*:\s*//' | sed 's/\([0-9]*\.[0-9]*\)\.[0-9]/\1/' )
 	if [ "$UBUNTU_VERSION" == "Ubuntu 22.04 LTS" ]; then
 		# This machine is running Ubuntu 22.04, which is supported by
@@ -39,8 +47,9 @@ if [ -z "$TAG" ]; then
 		echo "The last version of Mail-in-a-Box supporting Ubuntu 14.04 will be installed."
 		TAG=v0.30
 	else
-		echo "This script may be used only on a machine running Ubuntu 14.04, 18.04, or 22.04."
+		echo "This script may be used only on a machine running Ubuntu 14.04, 18.04, or 22.04, or Debian 13."
 		exit 1
+	fi
 	fi
 fi
 

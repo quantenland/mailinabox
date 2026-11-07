@@ -91,13 +91,13 @@ def get_ssl_certificates(env):
 
 	# Sort the certificates to prefer good ones.
 	import datetime
-	now = datetime.datetime.utcnow()
+	now = datetime.datetime.now(datetime.timezone.utc)
 	ret = { }
 	for domain, cert_list in domains.items():
-		#for c in cert_list: print(domain, c.not_valid_before, c.not_valid_after, "("+str(now)+")", c.issuer, c.subject, c._filename)
+		#for c in cert_list: print(domain, c.not_valid_before_utc, c.not_valid_after_utc, "("+str(now)+")", c.issuer, c.subject, c._filename)
 		cert_list.sort(key = lambda cert : (
 			# must be valid NOW
-			cert["cert"].not_valid_before <= now <= cert["cert"].not_valid_after,
+			cert["cert"].not_valid_before_utc <= now <= cert["cert"].not_valid_after_utc,
 
 			# prefer one that is not self-signed
 			cert["cert"].issuer != cert["cert"].subject,
@@ -110,7 +110,7 @@ def get_ssl_certificates(env):
 
 			# prefer one with the expiration furthest into the future so
 			# that we can easily rotate to new certs as we get them
-			cert["cert"].not_valid_after,
+			cert["cert"].not_valid_after_utc,
 
 			###########################################################
 			# We always choose the certificate that is good for the
@@ -316,7 +316,6 @@ def provision_certificates(env, limit_domains):
 				# 	"-subj", "/CN=" + domain_list[0],
 				# 	"-sha256" ])
 				from cryptography import x509
-				from cryptography.hazmat.backends import default_backend
 				from cryptography.hazmat.primitives.serialization import Encoding
 				from cryptography.hazmat.primitives import hashes
 				from cryptography.x509.oid import NameOID
@@ -326,7 +325,7 @@ def provision_certificates(env, limit_domains):
 				builder = builder.add_extension(x509.SubjectAlternativeName(
 					[x509.DNSName(d) for d in domain_list]
 				), critical=False)
-				request = builder.sign(load_pem(load_cert_chain(key_file)[0]), hashes.SHA256(), default_backend())
+				request = builder.sign(load_pem(load_cert_chain(key_file)[0]), hashes.SHA256())
 				with open(csr_file.name, "wb") as f:
 					f.write(request.public_bytes(Encoding.PEM))
 
@@ -451,7 +450,7 @@ def install_cert_copy_file(fn, env):
 	_all_domains, cn = get_certificate_domains(cert)
 	path = "{}-{}-{}.pem".format(
 		safe_domain_name(cn), # common name, which should be filename safe because it is IDNA-encoded, but in case of a malformed cert make sure it's ok to use as a filename
-		cert.not_valid_after.date().isoformat().replace("-", ""), # expiration date
+		cert.not_valid_after_utc.date().isoformat().replace("-", ""), # expiration date
 		hexlify(cert.fingerprint(hashes.SHA256())).decode("ascii")[0:8], # fingerprint prefix
 		)
 	ssl_certificate = os.path.join(os.path.join(env["STORAGE_ROOT"], 'ssl', path))
@@ -560,12 +559,12 @@ def check_certificate(domain, ssl_certificate, ssl_private_key, warn_if_expiring
 	if just_check_domain:
 		return ("OK", None)
 
-	# Check that the certificate hasn't expired. The datetimes returned by the
-	# certificate are 'naive' and in UTC. We need to get the current time in UTC.
+	# Check that the certificate hasn't expired. Certificate timestamps are
+	# timezone-aware UTC.
 	import datetime
-	now = datetime.datetime.utcnow()
-	if not(cert.not_valid_before <= now <= cert.not_valid_after):
-		return (f"The certificate has expired or is not yet valid. It is valid from {cert.not_valid_before} to {cert.not_valid_after}.", None)
+	now = datetime.datetime.now(datetime.timezone.utc)
+	if not(cert.not_valid_before_utc <= now <= cert.not_valid_after_utc):
+		return (f"The certificate has expired or is not yet valid. It is valid from {cert.not_valid_before_utc} to {cert.not_valid_after_utc}.", None)
 
 	# Next validate that the certificate is valid. This checks whether the certificate
 	# is self-signed, that the chain of trust makes sense, that it is signed by a CA
@@ -598,7 +597,7 @@ def check_certificate(domain, ssl_certificate, ssl_private_key, warn_if_expiring
 	# good.
 
 	# But is it expiring soon?
-	cert_expiration_date = cert.not_valid_after
+	cert_expiration_date = cert.not_valid_after_utc
 	ndays = (cert_expiration_date-now).days
 	if not rounded_time or ndays <= 10:
 		# Yikes better renew soon!
@@ -632,16 +631,15 @@ def load_pem(pem):
 	# using classes from the cryptography package.
 	from cryptography.x509 import load_pem_x509_certificate
 	from cryptography.hazmat.primitives import serialization
-	from cryptography.hazmat.backends import default_backend
 	pem_type = re.match(b"-+BEGIN (.*?)-+[\r\n]", pem)
 	if pem_type is None:
 		msg = "File is not a valid PEM-formatted file."
 		raise ValueError(msg)
 	pem_type = pem_type.group(1)
 	if pem_type.endswith(b"PRIVATE KEY"):
-		return serialization.load_pem_private_key(pem, password=None, backend=default_backend())
+		return serialization.load_pem_private_key(pem, password=None)
 	if pem_type == b"CERTIFICATE":
-		return load_pem_x509_certificate(pem, default_backend())
+		return load_pem_x509_certificate(pem)
 	raise ValueError("Unsupported PEM object type: " + pem_type.decode("ascii", "replace"))
 
 def get_certificate_domains(cert):

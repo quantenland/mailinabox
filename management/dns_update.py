@@ -452,7 +452,16 @@ def build_sshfp_records():
 	if not port:
 		return
 
-	keys = shell("check_output", ["ssh-keyscan", "-4", "-t", "rsa,dsa,ecdsa,ed25519", "-p", str(port), "localhost"])
+	# OpenSSH 10 (Debian 13) rejects the removed "dsa" type and exits
+	# before scanning, which aborted DNS updates with an HTTP 500 while
+	# creating the first mailbox. DSA host keys are obsolete.
+	code, keys = shell(
+		"check_output",
+		["ssh-keyscan", "-4", "-t", "rsa,ecdsa,ed25519", "-p", str(port), "localhost"],
+		trap=True,
+	)
+	if code != 0 or not keys:
+		return
 	keys = sorted(keys.split("\n"))
 
 	for key in keys:

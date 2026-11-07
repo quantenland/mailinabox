@@ -17,12 +17,13 @@ echo "Installing Nextcloud (contacts/calendar)..."
 # * See https://nextcloud.com/changelog for the latest version.
 # * Check https://docs.nextcloud.com/server/latest/admin_manual/installation/system_requirements.html
 #   for whether it supports the version of PHP available on this machine.
-# * Since Nextcloud only supports upgrades from consecutive major versions,
-#   we automatically install intermediate versions as needed.
+# * This port installs this release directly. A later release of this port
+#   moves an existing database forward with occ upgrade. There is no path
+#   from older Mail-in-a-Box Nextcloud releases.
 # * The hash is the SHA1 hash of the ZIP package, which you can find by just running this script and
 #   copying it from the error message when it doesn't match what is below.
-nextcloud_ver=27.1.11
-nextcloud_hash=9f30c01a021c2e5a9e7baff119955afb3c552ebc
+nextcloud_ver=35.0.2
+nextcloud_hash=73b0fedd3c6c48c5ab26d8105cd8a928f9f8ca5e
 
 # Nextcloud apps
 # --------------
@@ -36,16 +37,18 @@ nextcloud_hash=9f30c01a021c2e5a9e7baff119955afb3c552ebc
 # find by running: curl -sL <url> | sha1sum
 
 # Always ensure the versions are supported, see https://apps.nextcloud.com/apps/contacts
-contacts_ver=5.5.4
-contacts_hash=c4e3f2183a0088b829f8aa1b3af1f87c9a4c46a2
+contacts_ver=8.9.5
+contacts_hash=d0fb2f8f275f14be273a84f9b9a512e5e51e043b
 
 # Always ensure the versions are supported, see https://apps.nextcloud.com/apps/calendar
-calendar_ver=4.7.20
-calendar_hash=12d876904e227156e39ca4335b18481b42a6d00f
+calendar_ver=6.6.5
+calendar_hash=c235ac4624de55ff6a31b48a194cd344f20200f7
 
-# Always ensure the versions are supported, see https://apps.nextcloud.com/apps/user_external
-user_external_ver=3.4.0
-user_external_hash=7f9d8f4dd6adb85a0e3d7622d85eeb7bfe53f3b4
+# user_external 4.0.0 is the newest release. It declares a maximum of Nextcloud 34.
+# It runs on 35 with app_install_overwrite (nextcloud/user_external#311). There is
+# no newer release yet.
+user_external_ver=4.0.0
+user_external_hash=214497dd8691f279ba3740797c565310f0793054
 
 # Developer advice (test plan)
 # ----------------------------
@@ -133,27 +136,26 @@ InstallNextcloud() {
 	# that error.
 	chown -f -R www-data:www-data "$STORAGE_ROOT/owncloud" /usr/local/lib/owncloud || /bin/true
 
-	# If this isn't a new installation, immediately run the upgrade script.
-	# Then check for success (0=ok and 3=no upgrade needed, both are success).
+	# When this port is installed again with a newer Nextcloud release, the
+	# database is already here. Update its schema to the files just unpacked.
 	if [ -e "$STORAGE_ROOT/owncloud/owncloud.db" ]; then
-		# ownCloud 8.1.1 broke upgrades. It may fail on the first attempt, but
-		# that can be OK.
+		set +e
 		sudo -u www-data php"$PHP_VER" /usr/local/lib/owncloud/occ upgrade
 		E=$?
+		set -e
 		if [ $E -ne 0 ] && [ $E -ne 3 ]; then
-			echo "Trying ownCloud upgrade again to work around ownCloud upgrade bug..."
+			echo "Trying Nextcloud upgrade again..."
+			set +e
 			sudo -u www-data php"$PHP_VER" /usr/local/lib/owncloud/occ upgrade
 			E=$?
+			set -e
 			if [ $E -ne 0 ] && [ $E -ne 3 ]; then exit 1; fi
 			sudo -u www-data php"$PHP_VER" /usr/local/lib/owncloud/occ maintenance:mode --off
 			echo "...which seemed to work."
 		fi
 
-		# Add missing indices. NextCloud didn't include this in the normal upgrade because it might take some time.
 		sudo -u www-data php"$PHP_VER" /usr/local/lib/owncloud/occ db:add-missing-indices
 		sudo -u www-data php"$PHP_VER" /usr/local/lib/owncloud/occ db:add-missing-primary-keys
-
-		# Run conversion to BigInt identifiers, this process may take some time on large tables.
 		sudo -u www-data php"$PHP_VER" /usr/local/lib/owncloud/occ db:convert-filecache-bigint --no-interaction
 	fi
 }
@@ -171,80 +173,10 @@ else
 	CURRENT_NEXTCLOUD_VER=""
 fi
 
-# If the Nextcloud directory is missing (never been installed before, or the nextcloud version to be installed is different
-# from the version currently installed, do the install/upgrade
+# Install the application when it is missing or older than this release.
+# A database created by this port is left in place and updated below.
 if [ ! -d /usr/local/lib/owncloud/ ] || [[ ! ${CURRENT_NEXTCLOUD_VER} =~ ^$nextcloud_ver ]]; then
-
-	# Stop php-fpm if running. If they are not running (which happens on a previously failed install), dont bail.
 	service php"$PHP_VER"-fpm stop &> /dev/null || /bin/true
-
-	# Backup the existing ownCloud/Nextcloud.
-	# Create a backup directory to store the current installation and database to
-	BACKUP_DIRECTORY=$STORAGE_ROOT/owncloud-backup/$(date +"%Y-%m-%d-%T")
-	mkdir -p "$BACKUP_DIRECTORY"
-	if [ -d /usr/local/lib/owncloud/ ]; then
-		echo "Upgrading Nextcloud --- backing up existing installation, configuration, and database to directory to $BACKUP_DIRECTORY..."
-		cp -r /usr/local/lib/owncloud "$BACKUP_DIRECTORY/owncloud-install"
-	fi
-	if [ -e "$STORAGE_ROOT/owncloud/owncloud.db" ]; then
-		cp "$STORAGE_ROOT/owncloud/owncloud.db" "$BACKUP_DIRECTORY"
-	fi
-	if [ -e "$STORAGE_ROOT/owncloud/config.php" ]; then
-		cp "$STORAGE_ROOT/owncloud/config.php" "$BACKUP_DIRECTORY"
-	fi
-
-	# If ownCloud or Nextcloud was previously installed....
-	if [ -n "${CURRENT_NEXTCLOUD_VER}" ]; then
-		# Database migrations from ownCloud are no longer possible because ownCloud cannot be run under
-		# PHP 7.
-
-		if [ -e "$STORAGE_ROOT/owncloud/config.php" ]; then
-			# Remove the read-onlyness of the config, which is needed for migrations, especially for v24
-			sed -i -e '/config_is_read_only/d' "$STORAGE_ROOT/owncloud/config.php"
-		fi
-
-		if [[ ${CURRENT_NEXTCLOUD_VER} =~ ^[89] ]]; then
-			echo "Upgrades from Mail-in-a-Box prior to v0.28 (dated July 30, 2018) with Nextcloud < 13.0.6 (you have ownCloud 8 or 9) are not supported. Upgrade to Mail-in-a-Box version v0.30 first. Setup will continue, but skip the Nextcloud migration."
-			return 0
-		elif [[ ${CURRENT_NEXTCLOUD_VER} =~ ^1[012] ]]; then
-			echo "Upgrades from Mail-in-a-Box prior to v0.28 (dated July 30, 2018) with Nextcloud < 13.0.6 (you have ownCloud 10, 11 or 12) are not supported. Upgrade to Mail-in-a-Box version v0.30 first. Setup will continue, but skip the Nextcloud migration."
-			return 0
-		elif [[ ${CURRENT_NEXTCLOUD_VER} =~ ^1[3456789] ]]; then
-			echo "Upgrades from Mail-in-a-Box prior to v60 with Nextcloud 19 or earlier are not supported. Upgrade to the latest Mail-in-a-Box version supported on your machine first. Setup will continue, but skip the Nextcloud migration."
-			return 0
-		fi
-
-		# Hint: whenever you bump, remember this:
-		# - Run a server with the previous version
-		# - On a new if-else block, copy the versions/hashes from the previous version
-		# - Run sudo ./setup/start.sh on the new machine. Upon completion, test its basic functionalities.
-
-		if [[ ${CURRENT_NEXTCLOUD_VER} =~ ^20 ]]; then
-			InstallNextcloud 21.0.7 f5c7079c5b56ce1e301c6a27c0d975d608bb01c9 4.0.7 45e7cf4bfe99cd8d03625cf9e5a1bb2e90549136 3.0.4 d0284b68135777ec9ca713c307216165b294d0fe
-			CURRENT_NEXTCLOUD_VER="21.0.7"
-		fi
-		if [[ ${CURRENT_NEXTCLOUD_VER} =~ ^21 ]]; then
-			InstallNextcloud 22.2.6 9d39741f051a8da42ff7df46ceef2653a1dc70d9 4.1.0 697f6b4a664e928d72414ea2731cb2c9d1dc3077 3.2.2 ce4030ab57f523f33d5396c6a81396d440756f5f 3.0.0 0df781b261f55bbde73d8c92da3f99397000972f
-			CURRENT_NEXTCLOUD_VER="22.2.6"
-		fi
-		if [[ ${CURRENT_NEXTCLOUD_VER} =~ ^22 ]]; then
-			InstallNextcloud 23.0.12 d138641b8e7aabebe69bb3ec7c79a714d122f729 4.1.0 697f6b4a664e928d72414ea2731cb2c9d1dc3077 3.2.2 ce4030ab57f523f33d5396c6a81396d440756f5f 3.0.0 0df781b261f55bbde73d8c92da3f99397000972f
-			CURRENT_NEXTCLOUD_VER="23.0.12"
-		fi
-		if [[ ${CURRENT_NEXTCLOUD_VER} =~ ^23 ]]; then
-			InstallNextcloud 24.0.12 7aa5d61632c1ccf4ca3ff00fb6b295d318c05599 4.1.0 697f6b4a664e928d72414ea2731cb2c9d1dc3077 3.2.2 ce4030ab57f523f33d5396c6a81396d440756f5f 3.0.0 0df781b261f55bbde73d8c92da3f99397000972f
-			CURRENT_NEXTCLOUD_VER="24.0.12"
-		fi
-        if [[ ${CURRENT_NEXTCLOUD_VER} =~ ^24 ]]; then
-			InstallNextcloud 25.0.7 a5a565c916355005c7b408dd41a1e53505e1a080 5.3.0 4b0a6666374e3b55cfd2ae9b72e1d458b87d4c8c 4.4.2 21a42e15806adc9b2618760ef94f1797ef399e2f 3.2.0 a494073dcdecbbbc79a9c77f72524ac9994d2eec
-			CURRENT_NEXTCLOUD_VER="25.0.7"
-		fi
-		if [[ ${CURRENT_NEXTCLOUD_VER} =~ ^25 ]]; then
-			InstallNextcloud 26.0.13 d5c10b650e5396d5045131c6d22c02a90572527c 5.5.3 b234ab410480a4106176a28f39c9b27f471d0473 4.7.6 cf8e68e7d945ee71933f5bb71a969faf152da55c 3.3.0 280d24eb2a6cb56b4590af8847f925c28d8d853e
-			CURRENT_NEXTCLOUD_VER="26.0.13"
-		fi
-	fi
-
 	InstallNextcloud $nextcloud_ver $nextcloud_hash $contacts_ver $contacts_hash $calendar_ver $calendar_hash $user_external_ver $user_external_hash
 fi
 
@@ -347,6 +279,10 @@ include("$STORAGE_ROOT/owncloud/config.php");
   ),
 );
 
+# user_external 4.0.0 declares Nextcloud <= 34. 4.0.0 is still the newest
+# release and works on 35 once this ceiling is ignored.
+\$CONFIG['app_install_overwrite'] = array('user_external');
+
 \$CONFIG['mail_domain'] = '$PRIMARY_HOSTNAME';
 \$CONFIG['mail_from_address'] = 'administrator'; # just the local part, matches the required administrator alias on mail_domain/$PRIMARY_HOSTNAME
 \$CONFIG['mail_smtpmode'] = 'sendmail';
@@ -369,7 +305,7 @@ chown www-data:www-data "$STORAGE_ROOT/owncloud/config.php"
 # user_external is what allows Nextcloud to use IMAP for login. The contacts
 # and calendar apps are the extensions we really care about here.
 hide_output sudo -u www-data php"$PHP_VER" /usr/local/lib/owncloud/console.php app:disable firstrunwizard
-hide_output sudo -u www-data php"$PHP_VER" /usr/local/lib/owncloud/console.php app:enable user_external
+hide_output sudo -u www-data php"$PHP_VER" /usr/local/lib/owncloud/occ app:enable --force user_external
 hide_output sudo -u www-data php"$PHP_VER" /usr/local/lib/owncloud/console.php app:enable contacts
 hide_output sudo -u www-data php"$PHP_VER" /usr/local/lib/owncloud/console.php app:enable calendar
 
@@ -404,13 +340,6 @@ tools/editconf.py /etc/php/"$PHP_VER"/cli/conf.d/10-opcache.ini -c ';' \
 	opcache.memory_consumption=128 \
 	opcache.save_comments=1 \
 	opcache.revalidate_freq=1
-
-# Migrate users_external data from <0.6.0 to version 3.0.0
-# (see https://github.com/nextcloud/user_external).
-# This version was probably in use in Mail-in-a-Box v0.41 (February 26, 2019) and earlier.
-# We moved to v0.6.3 in 193763f8. Ignore errors - maybe there are duplicated users with the
-# correct backend already.
-sqlite3 "$STORAGE_ROOT/owncloud/owncloud.db" "UPDATE oc_users_external SET backend='127.0.0.1';" || /bin/true
 
 # Set up a general cron job for Nextcloud.
 # Also add another job for Calendar updates, per advice in the Nextcloud docs

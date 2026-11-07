@@ -5,7 +5,39 @@
 # -o pipefail: don't ignore errors in the non-last command in a pipeline
 set -euo pipefail
 
-PHP_VER=8.0
+# Nextcloud 35 runs on PHP 8.3, 8.4, or 8.5. 8.4 is the newest of those
+# that Roundcube 1.6 also runs on.
+PHP_VER=8.4
+
+function on_debian() {
+	# True when this machine is Debian. /etc/os-release is read in a
+	# subshell so its variables do not leak into setup.
+	local id
+	id=$(. /etc/os-release && printf '%s' "${ID:-}")
+	[ "$id" = "debian" ]
+}
+
+function apt_package_available() {
+	# True when apt has an installable candidate for this package.
+	# A virtual package with no provider has candidate "(none)".
+	local cand
+	cand=$(apt-cache policy "$1" 2>/dev/null | awk '/Candidate:/{print $2; exit}')
+	[ -n "$cand" ] && [ "$cand" != "(none)" ]
+}
+
+function dovecot_version_at_least() {
+	# dovecot_version_at_least MAJOR MINOR
+	# Compares the installed Dovecot version. Debian 13 ships 2.4, whose
+	# configuration language is not compatible with the 2.3 files we write
+	# for Ubuntu 22.04.
+	local want_major="$1" want_minor="$2"
+	local ver major minor
+	ver=$(dovecot --version | awk '{print $1}')
+	major=${ver%%.*}
+	minor=${ver#*.}
+	minor=${minor%%.*}
+	[ "$major" -gt "$want_major" ] || { [ "$major" -eq "$want_major" ] && [ "$minor" -ge "$want_minor" ]; }
+}
 
 function hide_output {
 	# This function hides the output of a command unless the command fails

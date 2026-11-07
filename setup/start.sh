@@ -14,8 +14,17 @@ source setup/preflight.sh
 # Python may not be able to read/write files. This is also
 # in the management daemon startup script and the cron script.
 
-if ! locale -a | grep en_US.utf8 > /dev/null; then
-    # Generate locale if not exists
+if ! locale -a | grep -qiE 'en_US\.(utf8|utf-8)' > /dev/null; then
+    # Generate locale if not exists. Debian's locale-gen only enables
+    # locales listed in /etc/locale.gen, and a minimal image may not
+    # have the locales package installed yet.
+    if ! command -v locale-gen >/dev/null 2>&1; then
+        hide_output apt-get update
+        apt_get_quiet install locales
+    fi
+    if [ -f /etc/locale.gen ]; then
+        sed -i 's/^# *\(en_US.UTF-8 UTF-8\)/\1/' /etc/locale.gen
+    fi
     hide_output locale-gen en_US.UTF-8
 fi
 
