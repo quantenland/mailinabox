@@ -97,11 +97,9 @@ fi
 if on_debian; then
 	# Ubuntu PPAs and the "universe" component do not exist on Debian, and
 	# software-properties-common is not in Debian 13. Trixie ships PHP 8.4,
-	# but php-imap was removed, and Nextcloud 27 through 31 (the upgrade
-	# hops below 32) do not run on PHP 8.4. packages.sury.org is the Debian
-	# build of the same PHP archive as ppa:ondrej/php. It supplies php8.4
-	# with imap for Roundcube, Nextcloud, and Z-Push, and php8.2 for those
-	# hops. Duplicity comes from Debian itself.
+	# but php-imap was removed. packages.sury.org is the Debian build of the
+	# same PHP archive as ppa:ondrej/php. It supplies php8.4 with imap for
+	# Roundcube, Nextcloud, and Z-Push. Duplicity comes from Debian itself.
 	echo "Configuring the Debian PHP repository..."
 	hide_output apt-get update
 	apt_install ca-certificates curl lsb-release
@@ -113,10 +111,6 @@ if on_debian; then
 	# php8.4-imap stay on one build.
 	cat > /etc/apt/preferences.d/mailinabox-php <<EOF
 Package: php8.4*
-Pin: origin packages.sury.org
-Pin-Priority: 700
-
-Package: php8.2*
 Pin: origin packages.sury.org
 Pin-Priority: 700
 EOF
@@ -138,7 +132,7 @@ else
 	hide_output add-apt-repository -y ppa:duplicity-team/duplicity-release-git
 
 	# Ubuntu 22.04 ships PHP 8.1. Nextcloud 35 needs PHP 8.4, which this
-	# archive also provides, along with PHP 8.2 for the older upgrade hops.
+	# archive provides.
 	hide_output add-apt-repository --y ppa:ondrej/php
 fi
 

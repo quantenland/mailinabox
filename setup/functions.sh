@@ -6,10 +6,8 @@
 set -euo pipefail
 
 # Nextcloud 35 runs on PHP 8.3, 8.4, or 8.5. 8.4 is the newest of those
-# that Roundcube 1.6 also runs on. Versions 27 through 31 cannot start
-# on 8.4, so an existing box steps through them on PHP_LEGACY_VER.
+# that Roundcube 1.6 also runs on.
 PHP_VER=8.4
-PHP_LEGACY_VER=8.2
 
 function on_debian() {
 	# True when this machine is Debian. /etc/os-release is read in a
