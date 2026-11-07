@@ -111,7 +111,13 @@ exec gunicorn -b 127.0.0.1:10222 -w 1 --timeout 630 wsgi:app
 EOF
 chmod +x $inst_dir/start
 cp --remove-destination conf/mailinabox.service /lib/systemd/system/mailinabox.service # target was previously a symlink so remove it first
-hide_output systemctl link -f /lib/systemd/system/mailinabox.service
+# The unit file is already in systemd's search path. `systemctl link`
+# also creates /etc/systemd/system/mailinabox.service, and systemd 257
+# (Debian 13) then refuses `systemctl enable` with "Refusing to operate
+# on linked unit file". Remove a link left by an earlier run.
+if [ -L /etc/systemd/system/mailinabox.service ]; then
+	rm -f /etc/systemd/system/mailinabox.service
+fi
 hide_output systemctl daemon-reload
 hide_output systemctl enable mailinabox.service
 
