@@ -55,4 +55,14 @@ if [ -z "$(management/cli.py user)" ]; then
 
 	# Create an alias to which we'll direct all automatically-created administrative aliases.
 	management/cli.py alias add "administrator@$PRIMARY_HOSTNAME" "$EMAIL_ADDR" > /dev/null
+
+# The account is stored before DNS is rewritten. If that rewrite failed, the
+# mailbox exists but was never made an administrator. Finish that on the next run.
+elif [ -z "$(management/cli.py user admins)" ]; then
+	first_user=$(management/cli.py user | head -n 1 | sed 's/\*$//')
+	if [ -n "$first_user" ]; then
+		echo "Making $first_user an administrator..."
+		hide_output management/cli.py user make-admin "$first_user"
+		management/cli.py alias add "administrator@$PRIMARY_HOSTNAME" "$first_user" > /dev/null
+	fi
 fi
