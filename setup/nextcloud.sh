@@ -17,8 +17,9 @@ echo "Installing Nextcloud (contacts/calendar)..."
 # * See https://nextcloud.com/changelog for the latest version.
 # * Check https://docs.nextcloud.com/server/latest/admin_manual/installation/system_requirements.html
 #   for whether it supports the version of PHP available on this machine.
-# * An older Nextcloud database is not upgraded. This release is installed
-#   as a new instance.
+# * This port installs this release directly. A later release of this port
+#   moves an existing database forward with occ upgrade. There is no path
+#   from older Mail-in-a-Box Nextcloud releases.
 # * The hash is the SHA1 hash of the ZIP package, which you can find by just running this script and
 #   copying it from the error message when it doesn't match what is below.
 nextcloud_ver=35.0.2
@@ -135,9 +136,8 @@ InstallNextcloud() {
 	# that error.
 	chown -f -R www-data:www-data "$STORAGE_ROOT/owncloud" /usr/local/lib/owncloud || /bin/true
 
-	# A database left here belongs to this same Nextcloud release. Bring its
-	# schema up to the files just unpacked. Older databases are removed
-	# before this function runs.
+	# When this port is installed again with a newer Nextcloud release, the
+	# database is already here. Update its schema to the files just unpacked.
 	if [ -e "$STORAGE_ROOT/owncloud/owncloud.db" ]; then
 		set +e
 		sudo -u www-data php"$PHP_VER" /usr/local/lib/owncloud/occ upgrade
@@ -173,28 +173,8 @@ else
 	CURRENT_NEXTCLOUD_VER=""
 fi
 
-# Anything other than this Nextcloud release is thrown away and installed
-# fresh. There is no upgrade from Nextcloud 27 or any earlier release.
-if [ -n "${CURRENT_NEXTCLOUD_VER}" ] && [[ ! ${CURRENT_NEXTCLOUD_VER} =~ ^$nextcloud_ver ]]; then
-	echo "Replacing Nextcloud ${CURRENT_NEXTCLOUD_VER} with a new ${nextcloud_ver} install."
-	echo "The previous Nextcloud database is not upgraded. A copy is kept in ${STORAGE_ROOT}/owncloud-backup."
-	BACKUP_DIRECTORY=$STORAGE_ROOT/owncloud-backup/$(date +"%Y-%m-%d-%T")
-	mkdir -p "$BACKUP_DIRECTORY"
-	if [ -d /usr/local/lib/owncloud/ ]; then
-		cp -a /usr/local/lib/owncloud "$BACKUP_DIRECTORY/owncloud-install"
-	fi
-	if [ -e "$STORAGE_ROOT/owncloud/owncloud.db" ]; then
-		cp -a "$STORAGE_ROOT/owncloud/owncloud.db" "$BACKUP_DIRECTORY"
-	fi
-	if [ -e "$STORAGE_ROOT/owncloud/config.php" ]; then
-		cp -a "$STORAGE_ROOT/owncloud/config.php" "$BACKUP_DIRECTORY"
-	fi
-	rm -rf /usr/local/lib/owncloud "$STORAGE_ROOT/owncloud"
-	CURRENT_NEXTCLOUD_VER=""
-fi
-
-# Install the application if it is missing. A database that is already this
-# release is left in place.
+# Install the application when it is missing or older than this release.
+# A database created by this port is left in place and updated below.
 if [ ! -d /usr/local/lib/owncloud/ ] || [[ ! ${CURRENT_NEXTCLOUD_VER} =~ ^$nextcloud_ver ]]; then
 	service php"$PHP_VER"-fpm stop &> /dev/null || /bin/true
 	InstallNextcloud $nextcloud_ver $nextcloud_hash $contacts_ver $contacts_hash $calendar_ver $calendar_hash $user_external_ver $user_external_hash
@@ -361,13 +341,6 @@ tools/editconf.py /etc/php/"$PHP_VER"/cli/conf.d/10-opcache.ini -c ';' \
 	opcache.save_comments=1 \
 	opcache.revalidate_freq=1
 
-# Migrate users_external data from <0.6.0 to version 3.0.0
-# (see https://github.com/nextcloud/user_external).
-# This version was probably in use in Mail-in-a-Box v0.41 (February 26, 2019) and earlier.
-# We moved to v0.6.3 in 193763f8. Ignore errors - maybe there are duplicated users with the
-# correct backend already.
-sqlite3 "$STORAGE_ROOT/owncloud/owncloud.db" "UPDATE oc_users_external SET backend='127.0.0.1';" || /bin/true
-
 # Set up a general cron job for Nextcloud.
 # Also add another job for Calendar updates, per advice in the Nextcloud docs
 # https://docs.nextcloud.com/server/24/admin_manual/groupware/calendar.html#background-jobs
@@ -408,17 +381,6 @@ EOF
 #	 sqlite3 $STORAGE_ROOT/owncloud/owncloud.db "INSERT OR IGNORE INTO oc_group_user VALUES ('admin', '$user')"
 # done
 # ```
-
-# PHP 8.0 was the previous pin. PHP 8.2 was installed only for the
-# Nextcloud upgrade path this installer no longer uses.
-if dpkg -s php8.2-cli >/dev/null 2>&1; then
-	hide_output apt-get purge -y 'php8.2*'
-	rm -rf /etc/php/8.2
-fi
-if [ "$PHP_VER" != "8.0" ] && dpkg -s php8.0-cli >/dev/null 2>&1; then
-	hide_output apt-get purge -y 'php8.0*'
-	rm -rf /etc/php/8.0
-fi
 
 # Enable PHP modules and restart PHP.
 restart_service php"$PHP_VER"-fpm
