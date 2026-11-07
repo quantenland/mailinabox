@@ -197,10 +197,10 @@ fi
 # not likely the user will want to change this, so we only ask on first
 # setup.
 if [ -z "${NONINTERACTIVE:-}" ]; then
-	if [ ! -f /etc/timezone ] || [ -n "${FIRST_TIME_SETUP:-}" ]; then
-		# If the file is missing or this is the user's first time running
-		# Mail-in-a-Box setup, run the interactive timezone configuration
-		# tool.
+	if [ -n "${FIRST_TIME_SETUP:-}" ]; then
+		# Ask only on first setup. Changing the zone later confuses
+		# fail2ban, and a missing /etc/timezone is not proof that the
+		# zone is unset: Debian 13's tzdata never creates that file.
 		dpkg-reconfigure tzdata
 		restart_service rsyslog
 	fi
@@ -212,6 +212,20 @@ else
 		echo "Etc/UTC" > /etc/timezone
 		restart_service rsyslog
 	fi
+fi
+
+# Debian 13 records the zone as the /etc/localtime symlink and does not
+# create /etc/timezone. Nextcloud and Z-Push read that file.
+if [ ! -f /etc/timezone ]; then
+	tz="Etc/UTC"
+	if [ -e /etc/localtime ]; then
+		resolved=$(readlink -f /etc/localtime || true)
+		stripped=${resolved#/usr/share/zoneinfo/}
+		if [ -n "${stripped:-}" ] && [ "$stripped" != "$resolved" ]; then
+			tz=$stripped
+		fi
+	fi
+	printf '%s\n' "$tz" > /etc/timezone
 fi
 
 # ### Seed /dev/urandom
