@@ -1,11 +1,34 @@
-Mail-in-a-Box
-=============
+Mail in a Box on Debian 13 Trixie
+====================================
 
-By [@JoshData](https://github.com/JoshData) and [contributors](https://github.com/mail-in-a-box/mailinabox/graphs/contributors).
+This is a fork of [Mail-in-a-Box](https://github.com/mail-in-a-box/mailinabox) by [@JoshData](https://github.com/JoshData) and [contributors](https://github.com/mail-in-a-box/mailinabox/graphs/contributors). It is being ported to Debian 13 (Trixie), and the software it installs is updated to current releases. It is still a one-click mail server: SMTP, IMAP, webmail, contacts, calendar, and DNS on one machine.
 
-Mail-in-a-Box helps individuals take back control of their email by defining a one-click, easy-to-deploy SMTP+everything else server: a mail server in a box.
+**The original project website and setup guide are at [https://mailinabox.email](https://mailinabox.email).**
 
-**Please see [https://mailinabox.email](https://mailinabox.email) for the project's website and setup guide!**
+Compared with the original
+--------------------------
+
+The original column is what [mail-in-a-box/mailinabox](https://github.com/mail-in-a-box/mailinabox) `master` installs today. The fork column is what this repository installs on Debian 13.
+
+| Software | Original Mail-in-a-Box | This fork |
+| --- | --- | --- |
+| Operating system | Ubuntu 22.04 LTS | Debian 13 (Trixie). Ubuntu 22.04 is also accepted |
+| PHP | 8.0 | 8.4 |
+| Nextcloud | 27.1.11 | 35.0.2 |
+| Contacts | 5.5.4 | 8.9.5 |
+| Calendar | 4.7.20 | 6.6.5 |
+| user_external | 3.4.0 | 4.0.0 |
+| Roundcube | 1.6.20 | 1.6.20 |
+| Roundcube CardDAV | 4.4.3 | 4.4.3 |
+| Z-Push | 2.7.7 | 2.7.7 |
+| cryptography | 37.0.2 | 50.0.2 |
+| Admin UI jQuery | 2.2.4 | 2.2.4 |
+| Admin UI Bootstrap | 3.4.1 | 3.4.1 |
+| Dovecot | 2.3, from Ubuntu | 2.4, from Debian |
+| Postfix, Nginx, SpamAssassin, NSD, BIND, Certbot, fail2ban | Ubuntu 22.04 packages | Debian 13 packages |
+| Spam training when mail is moved to Spam | dovecot-antispam | Not installed. Debian 13 has no Dovecot 2.4 build of that plugin |
+
+Roundcube, Z-Push, jQuery, and Bootstrap are the same pins as the original. Nextcloud, its apps, PHP, and the cryptography library are the ones this fork moves forward. On Ubuntu 22.04 this fork still installs those newer application versions, and Dovecot stays Ubuntu's 2.3.
 
 * * *
 
