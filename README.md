@@ -12,7 +12,7 @@ The original column is what [mail-in-a-box/mailinabox](https://github.com/mail-i
 
 | Software | Original Mail-in-a-Box | This fork |
 | --- | --- | --- |
-| Operating system | Ubuntu 22.04 LTS | Debian 13 (Trixie). Ubuntu 22.04 is also accepted |
+| Operating system | Ubuntu 22.04 LTS | Debian 13 (Trixie) only |
 | PHP | 8.0 | 8.4 |
 | Nextcloud | 27.1.11 | 35.0.2 |
 | Contacts | 5.5.4 | 8.9.5 |
@@ -28,7 +28,7 @@ The original column is what [mail-in-a-box/mailinabox](https://github.com/mail-i
 | Postfix, Nginx, SpamAssassin, NSD, BIND, Certbot, fail2ban | Ubuntu 22.04 packages | Debian 13 packages |
 | Spam training when mail is moved to Spam | dovecot-antispam | Not installed. Debian 13 has no Dovecot 2.4 build of that plugin |
 
-Roundcube, Z-Push, jQuery, and Bootstrap are the same pins as the original. Nextcloud, its apps, PHP, and the cryptography library are the ones this fork moves forward. On Ubuntu 22.04 this fork still installs those newer application versions, and Dovecot stays Ubuntu's 2.3.
+Roundcube, Z-Push, jQuery, and Bootstrap are the same pins as the original. Nextcloud, its apps, PHP, and the cryptography library are the ones this fork moves forward. This fork does not install on Ubuntu.
 
 * * *
 
@@ -46,7 +46,7 @@ Additionally, this project has a [Code of Conduct](CODE_OF_CONDUCT.md), which su
 In The Box
 ----------
 
-Mail-in-a-Box turns a fresh Debian 13 (Trixie) or Ubuntu 22.04 LTS 64-bit machine into a working mail server by installing and configuring various components.
+Mail-in-a-Box turns a fresh Debian 13 (Trixie) 64-bit machine into a working mail server by installing and configuring various components.
 
 It is a one-click email appliance. There are no user-configurable setup options. It "just works."
 
@@ -75,7 +75,7 @@ For more information on how Mail-in-a-Box handles your privacy, see the [securit
 Installation
 ------------
 
-Use a fresh machine that will only run mail. Debian 13 (Trixie) and Ubuntu 22.04 LTS, 64-bit, are supported. Give it at least 1 GB of RAM (the installer refuses to run below 512 MB) and a public IP address that can make outbound connections on port 25.
+Use a fresh Debian 13 (Trixie) machine that will only run mail. The installer stops if it is not Debian 13. Give it at least 1 GB of RAM (the installer refuses to run below 512 MB) and a public IP address that can make outbound connections on port 25.
 
 On the machine:
 

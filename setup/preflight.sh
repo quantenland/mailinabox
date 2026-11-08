@@ -8,15 +8,14 @@ if [[ $EUID -ne 0 ]]; then
 	exit 1
 fi
 
-# Check that we are running on Ubuntu 22.04 LTS or Debian 13 (trixie).
+# Check that we are running on Debian 13 (trixie). Ubuntu is not supported.
 # Pull in the variables defined in /etc/os-release but in a
 # namespace to avoid polluting our variables.
 source <(cat /etc/os-release | sed s/^/OS_RELEASE_/)
-if { [ "${OS_RELEASE_ID:-}" = "ubuntu" ] && [ "${OS_RELEASE_VERSION_ID:-}" = "22.04" ]; } \
-	|| { [ "${OS_RELEASE_ID:-}" = "debian" ] && [ "${OS_RELEASE_VERSION_ID:-}" = "13" ]; }; then
+if [ "${OS_RELEASE_ID:-}" = "debian" ] && [ "${OS_RELEASE_VERSION_ID:-}" = "13" ]; then
 	:
 else
-	echo "Mail-in-a-Box only supports being installed on Ubuntu 22.04 or Debian 13, sorry. You are running:"
+	echo "Mail-in-a-Box only supports being installed on Debian 13 (Trixie), sorry. You are running:"
 	echo
 	echo "${OS_RELEASE_ID:-"Unknown linux distribution"} ${OS_RELEASE_VERSION_ID:-}"
 	echo

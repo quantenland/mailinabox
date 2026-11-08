@@ -18,38 +18,18 @@ if [ -z "$TAG" ]; then
 	# to get the latest version, so the first such line must be the one that we
 	# want to display in status checks.
 	#
-	# Allow point-release versions of the major releases, e.g. 22.04.1 is OK.
 	# Debian is identified from os-release because lsb_release is not
 	# installed on a minimal Debian image. The first TAG= line below must
 	# stay the latest supported release; status checks read it.
+	# Ubuntu is not supported.
 	. /etc/os-release
 	if [ "${ID:-}" = "debian" ] && [ "${VERSION_ID:-}" = "13" ]; then
-		# Debian 13 (trixie). Same Mail-in-a-Box release series as Ubuntu 22.04.
+		# Debian 13 (trixie).
 		TAG=v78
 	else
-	UBUNTU_VERSION=$( lsb_release -d | sed 's/.*:\s*//' | sed 's/\([0-9]*\.[0-9]*\)\.[0-9]/\1/' )
-	if [ "$UBUNTU_VERSION" == "Ubuntu 22.04 LTS" ]; then
-		# This machine is running Ubuntu 22.04, which is supported by
-		# Mail-in-a-Box versions 60 and later.
-		TAG=v78
-	elif [ "$UBUNTU_VERSION" == "Ubuntu 18.04 LTS" ]; then
-		# This machine is running Ubuntu 18.04, which is supported by
-		# Mail-in-a-Box versions 0.40 through 5x.
-		echo "Support is ending for Ubuntu 18.04."
-		echo "Please immediately begin to migrate your data to"
-		echo "a new machine running Ubuntu 22.04. See:"
-		echo "https://mailinabox.email/maintenance.html#upgrade"
-		TAG=v57a
-	elif [ "$UBUNTU_VERSION" == "Ubuntu 14.04 LTS" ]; then
-		# This machine is running Ubuntu 14.04, which is supported by
-		# Mail-in-a-Box versions 1 through v0.30.
-		echo "Ubuntu 14.04 is no longer supported."
-		echo "The last version of Mail-in-a-Box supporting Ubuntu 14.04 will be installed."
-		TAG=v0.30
-	else
-		echo "This script may be used only on a machine running Ubuntu 14.04, 18.04, or 22.04, or Debian 13."
+		echo "This installer only runs on Debian 13 (Trixie)."
+		echo "You are running: ${PRETTY_NAME:-${ID:-unknown} ${VERSION_ID:-}}"
 		exit 1
-	fi
 	fi
 fi
 
