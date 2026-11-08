@@ -23,7 +23,7 @@ Additionally, this project has a [Code of Conduct](CODE_OF_CONDUCT.md), which su
 In The Box
 ----------
 
-Mail-in-a-Box turns a fresh Ubuntu 22.04 LTS 64-bit machine into a working mail server by installing and configuring various components.
+Mail-in-a-Box turns a fresh Debian 13 (Trixie) or Ubuntu 22.04 LTS 64-bit machine into a working mail server by installing and configuring various components.
 
 It is a one-click email appliance. There are no user-configurable setup options. It "just works."
 
@@ -52,21 +52,35 @@ For more information on how Mail-in-a-Box handles your privacy, see the [securit
 Installation
 ------------
 
-See the [setup guide](https://mailinabox.email/guide.html) for detailed, user-friendly instructions.
+Use a fresh machine that will only run mail. Debian 13 (Trixie) and Ubuntu 22.04 LTS, 64-bit, are supported. Give it at least 1 GB of RAM (the installer refuses to run below 512 MB) and a public IP address that can make outbound connections on port 25.
 
-For experts, start with a completely fresh (really, I mean it) Ubuntu 22.04 LTS 64-bit machine. On the machine...
+On the machine:
 
-Clone this repository and checkout the tag corresponding to the most recent release (which you can find in the tags or releases lists on GitHub):
-
-	$ git clone https://github.com/mail-in-a-box/mailinabox
+	$ sudo apt update
+	$ sudo apt install -y git
+	$ git clone https://github.com/quantenland/mailinabox
 	$ cd mailinabox
-	$ git checkout TAGNAME
-
-Begin the installation.
-
 	$ sudo setup/start.sh
 
-The installation will install, uninstall, and configure packages to turn the machine into a working, good mail server.
+`main` is the branch to install. This port sets up a new box. It does not upgrade an older Mail-in-a-Box data directory.
+
+Setup asks for a few things:
+
+* The time zone, through Debian's `tzdata` prompt. Pick the zone you live in.
+* The email address that will administer the box. The domain after the `@` must be one you control.
+* The hostname. Keep the suggestion, `box.` plus that domain.
+* The public IP, when the machine cannot detect it. Leave IPv6 empty if the machine has none.
+* A password for that first mail account. The prompt does not echo it.
+
+The installer then installs and configures the mail stack and registers with Let's Encrypt. When it finishes it prints `Your Mail-in-a-Box is running.` and the control panel address:
+
+	https://box.example.com/admin
+
+Log in with the email address and the password you just chose. If the hostname does not resolve yet, open the `https://<ip>/admin` address printed at the end and check the certificate fingerprint shown there. The control panel lists the nameserver records to set at the domain registrar.
+
+To change an answer later, run `sudo mailinabox` from this directory.
+
+The [upstream setup guide](https://mailinabox.email/guide.html) describes the same kind of appliance. Install from this repository, not from that guide's one-line installer, which tracks the upstream Ubuntu release.
 
 For help, DO NOT contact Josh directly --- I don't do tech support by email or tweet (no exceptions).
 
