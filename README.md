@@ -56,11 +56,13 @@ Use a fresh machine that will only run mail. Debian 13 (Trixie) and Ubuntu 22.04
 
 On the machine:
 
-	$ sudo apt update
-	$ sudo apt install -y git
-	$ git clone https://github.com/quantenland/mailinabox
-	$ cd mailinabox
-	$ sudo setup/start.sh
+```
+sudo apt update
+sudo apt install -y git
+git clone https://github.com/quantenland/mailinabox
+cd mailinabox
+sudo setup/start.sh
+```
 
 `main` is the branch to install. This port sets up a new box. It does not upgrade an older Mail-in-a-Box data directory.
 
