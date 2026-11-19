@@ -22,6 +22,7 @@ from mailconfig import get_mail_users, get_mail_users_ex, get_admins, add_mail_u
 from mailconfig import get_mail_user_privileges, add_remove_mail_user_privilege
 from mailconfig import get_mail_aliases, get_mail_aliases_ex, get_mail_domains, add_mail_alias, remove_mail_alias
 from mailconfig import get_mail_quota, set_mail_quota
+from greylisting import get_greylisting, set_greylisting
 from mfa import get_public_mfa_state, provision_totp, validate_totp_secret, enable_mfa, disable_mfa
 import contextlib
 
@@ -276,6 +277,24 @@ def mail_aliases_remove():
 @authorized_personnel_only
 def mail_domains():
     return "".join(x+"\n" for x in get_mail_domains(env))
+
+@app.route('/mail/greylisting', methods=['GET'])
+@authorized_personnel_only
+def mail_greylisting_get():
+	# JSON true/false. Missing settings.yaml key is false (off).
+	return json_response(get_greylisting(env))
+
+@app.route('/mail/greylisting', methods=['POST'])
+@authorized_personnel_only
+def mail_greylisting_set():
+	# Same shape as the privacy toggle: a form field named "value".
+	value = request.form.get('value', '')
+	if value not in ('on', 'off'):
+		return ("Greylisting value must be 'on' or 'off'.\n", 400)
+	try:
+		return set_greylisting(value == 'on', env)
+	except (ValueError, OSError) as e:
+		return (str(e) + "\n", 500)
 
 # DNS
 

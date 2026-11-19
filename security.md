@@ -116,4 +116,4 @@ When DNSSEC is enabled at the box's domain name's registrar, [DANE TLSA](https:/
 
 ### Filters
 
-Incoming mail is run through several filters. Email is bounced if the sender's IP address is listed in the [Spamhaus Zen blacklist](http://www.spamhaus.org/zen/) or if the sender's domain is listed in the [Spamhaus Domain Block List](http://www.spamhaus.org/dbl/). Greylisting (with [postgrey](http://postgrey.schweikert.ch/)) is also used to cut down on spam. ([source](setup/mail-postfix.sh))
+Incoming mail is run through several filters. Email is bounced if the sender's IP address is listed in the [Spamhaus Zen blacklist](http://www.spamhaus.org/zen/) or if the sender's domain is listed in the [Spamhaus Domain Block List](http://www.spamhaus.org/dbl/). Greylisting (with [postgrey](http://postgrey.schweikert.ch/)) is off by default. An administrator can turn it on from the control panel after install; when it is on, unfamiliar senders are temporarily rejected. ([source](setup/mail-postfix.sh))

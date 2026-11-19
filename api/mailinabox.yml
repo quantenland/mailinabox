@@ -35,7 +35,7 @@ tags:
     description: Endpoints related to user authentication.
   - name: Mail
     description: |
-      Mail operations, which include getting all users, getting all aliases, adding/updating/removing users and aliases and getting all mail domains.
+      Mail operations, which include getting all users, getting all aliases, adding/updating/removing users and aliases, getting all mail domains, and turning greylisting on or off.
   - name: DNS
     description: |
       DNS operations, which include adding custom records, adding a secondary nameserver and viewing all DNS records.
@@ -1664,6 +1664,98 @@ paths:
             text/html:
               schema:
                 type: string
+  /mail/greylisting:
+    get:
+      tags:
+        - Mail
+      summary: Get greylisting status
+      description: |
+        Returns whether greylisting (postgrey on 127.0.0.1:10023) is consulted
+        for incoming mail. The default is off.
+
+        Response:
+
+          - `true`: Greylisting is on
+          - `false`: Greylisting is off
+      operationId: getMailGreylisting
+      x-codeSamples:
+        - lang: curl
+          source: |
+            curl -X GET "https://{host}/admin/mail/greylisting" \
+              -u "<email>:<password>"
+      responses:
+        200:
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MailGreylistingStatusResponse'
+        403:
+          description: Forbidden
+          content:
+            text/html:
+              schema:
+                type: string
+    post:
+      tags:
+        - Mail
+      summary: Turn greylisting on or off
+      description: |
+        Turns greylisting on or off and reloads Postfix. The choice is kept
+        in `settings.yaml` and is not reset by re-running setup.
+
+        Request:
+
+          - `value: on`: Consult postgrey (port 10023) before the quota policy
+          - `value: off`: Do not consult postgrey
+      operationId: updateMailGreylisting
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/MailGreylistingUpdateRequest'
+            examples:
+              enable:
+                summary: Turn greylisting on
+                value:
+                  value: 'on'
+              disable:
+                summary: Turn greylisting off
+                value:
+                  value: 'off'
+      x-codeSamples:
+        - lang: curl
+          source: |
+            curl -X POST "https://{host}/admin/mail/greylisting" \
+              -d "value=<string>" \
+              -u "<email>:<password>"
+      responses:
+        200:
+          description: Successful operation
+          content:
+            text/html:
+              schema:
+                $ref: '#/components/schemas/MailGreylistingUpdateResponse'
+              example: OK
+        400:
+          description: Bad request
+          content:
+            text/html:
+              schema:
+                type: string
+        500:
+          description: Postfix could not be updated
+          content:
+            text/html:
+              schema:
+                type: string
+        403:
+          description: Forbidden
+          content:
+            text/html:
+              schema:
+                type: string
   /web/domains:
     get:
       tags:
@@ -2398,6 +2490,30 @@ components:
       type: string
       example: OK
       description: System privacy update response.
+    MailGreylistingUpdateRequest:
+      type: object
+      required:
+        - value
+      properties:
+        value:
+          type: string
+          enum:
+            - 'on'
+            - 'off'
+          example: 'off'
+      description: Turn greylisting on or off.
+    MailGreylistingStatusResponse:
+      type: boolean
+      description: |
+        Greylisting status.
+
+          - `true`: postgrey is consulted
+          - `false`: postgrey is not consulted
+      example: false
+    MailGreylistingUpdateResponse:
+      type: string
+      example: OK
+      description: Greylisting update response.
     SystemRebootStatusResponse:
       type: boolean
       description: |

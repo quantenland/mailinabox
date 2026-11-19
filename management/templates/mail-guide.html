@@ -59,7 +59,37 @@
 		</div>
 		<div class="panel-body">
 			<h4>Greylisting</h4>
-			<p>Your box uses a technique called greylisting to cut down on spam. Greylisting works by initially rejecting mail from people you haven&rsquo;t received mail from before. Legitimate mail servers will attempt redelivery shortly afterwards, but the vast majority of spam gets tricked by this. If you are waiting for an email from someone new, such as if you are registering on a new website and are waiting for an email confirmation, please be aware there will be a minimum of 3 minutes delay, depending how soon the remote server attempts redelivery.</p>
+			<p>Greylisting is off by default, so incoming mail is accepted on the first connection. An administrator can turn it on to cut down on spam. When greylisting is on, your box initially rejects mail from people you haven&rsquo;t received mail from before. Legitimate mail servers attempt redelivery shortly afterwards, but most spam does not. Mail from someone new, such as a confirmation while you are registering on a website, can then be delayed by at least 3 minutes, depending on when the remote server retries.</p>
+			<p id="greylisting-control" class="if-logged-in-admin">
+				<span id="greylisting-state">Loading greylisting setting...</span>
+				<a href="#" id="greylisting-toggle" onclick="return toggle_greylisting();"></a>
+			</p>
+			<script>
+			var current_greylisting = false;
+			window["show_mail-guide"] = function() {
+				load_greylisting_setting();
+			};
+			function load_greylisting_setting() {
+				if (!api_credentials || (api_credentials.privileges || []).indexOf("admin") < 0)
+					return;
+				api("/mail/greylisting", "GET", {}, function(enabled) {
+					current_greylisting = !!enabled;
+					$("#greylisting-state").text(enabled
+						? "Greylisting is on. Mail from a new sender can be delayed by at least 3 minutes."
+						: "Greylisting is off. Incoming mail is accepted on the first connection.");
+					$("#greylisting-toggle").text(enabled ? "Turn off greylisting" : "Turn on greylisting");
+				});
+			}
+			function toggle_greylisting() {
+				api(
+					"/mail/greylisting",
+					"POST",
+					{ value: current_greylisting ? "off" : "on" },
+					function() { load_greylisting_setting(); }
+				);
+				return false;
+			}
+			</script>
 
 			<h4>+tag addresses</h4>
 			<p>Every incoming email address also receives mail for <code>+tag</code> addresses. If your email address is <code>you@yourdomain.com</code>, you&rsquo;ll also automatically get mail sent to <code>you+anythinghere@yourdomain.com</code>. Use this as a fast way to segment incoming mail for your own filtering rules without having to create aliases in this control panel.</p>

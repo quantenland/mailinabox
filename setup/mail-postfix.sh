@@ -8,7 +8,7 @@
 #
 # Postfix listens on port 25 (SMTP) for incoming mail from
 # other servers on the Internet. It is responsible for very
-# basic email filtering such as by IP address and greylisting,
+# basic email filtering such as by IP address and optional greylisting,
 # it checks that the destination address is valid, rewrites
 # destinations according to aliases, and passses email on to
 # another service for local mail delivery.
@@ -228,7 +228,8 @@ tools/editconf.py /etc/postfix/main.cf  -e lmtp_destination_recipient_limit=
 # * `permit_mynetworks`: Mail that originates locally can skip further checks.
 # * `reject_rbl_client`: Reject connections from IP addresses blacklisted in zen.spamhaus.org
 # * `reject_unlisted_recipient`: Although Postfix will reject mail to unknown recipients, it's nicer to reject such mail ahead of greylisting rather than after.
-# * `check_policy_service`: Apply greylisting using postgrey.
+# * `check_policy_service` on 127.0.0.1:10023: Greylisting via postgrey. Omitted unless an administrator has turned greylisting on. Off by default, so a fresh install accepts mail on the first connection.
+# * `check_policy_service` on 127.0.0.1:12340: Dovecot quota policy. Always present.
 #
 # Note the spamhaus rbl return codes are taken into account as advised here: https://docs.spamhaus.com/datasets/docs/source/40-real-world-usage/PublicMirrors/MTAs/020-Postfix.html
 # Notes: #NODOC
@@ -236,9 +237,14 @@ tools/editconf.py /etc/postfix/main.cf  -e lmtp_destination_recipient_limit=
 # so these IPs get mail delivered quickly. But when an IP is not listed in the permit_dnswl_client list (i.e. it is not #NODOC
 # whitelisted) then postfix does a DEFER_IF_REJECT, which results in all "unknown user" sorts of messages turning into #NODOC
 # "450 4.7.1 Client host rejected: Service unavailable". This is a retry code, so the mail doesn't properly bounce. #NODOC
+# Greylisting is not an install question. The saved choice is the "greylisting"
+# key in $STORAGE_ROOT/settings.yaml. A missing key means off, and re-running
+# setup must not turn it back on. Postgrey is still installed below so the
+# control panel can enable the check later without installing a package.
+RECIPIENT_RESTRICTIONS=$(python3 management/greylisting.py restrictions)
 tools/editconf.py /etc/postfix/main.cf \
 	smtpd_sender_restrictions="reject_non_fqdn_sender,reject_unknown_sender_domain,reject_authenticated_sender_login_mismatch,reject_rhsbl_sender dbl.spamhaus.org=127.0.1.[2..99]" \
-	smtpd_recipient_restrictions="permit_sasl_authenticated,permit_mynetworks,reject_rbl_client zen.spamhaus.org=127.0.0.[2..11],reject_unlisted_recipient,check_policy_service inet:127.0.0.1:10023,check_policy_service inet:127.0.0.1:12340"
+	smtpd_recipient_restrictions="$RECIPIENT_RESTRICTIONS"
 
 # Postfix connects to Postgrey on the 127.0.0.1 interface specifically. Ensure that
 # Postgrey listens on the same interface (and not IPv6, for instance).
